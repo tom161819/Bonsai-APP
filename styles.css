@@ -322,3 +322,36 @@ input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px;
 .sync.error { color: var(--clay); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .sync.error::before { background: var(--clay); border-radius: 0; transform: rotate(45deg); }
 @media (min-width: 761px) { .util-wrap { margin-left: 0; flex-direction: column; align-items: flex-start; gap: 4px; } }
+
+/* Přehled, druhá úprava: nadpis vlevo nahoře, úkoly v rámečku, vpravo sezónní rádce na čtyři měsíce */
+.wrap { margin: 0; max-width: 1280px; }
+.wrap.dash { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 40px; align-items: start; }
+.dash-main { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
+.dash .lead-text { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; padding: 0; }
+.dash .lead-text > div { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.frame { background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 20px 24px 12px; }
+.frame .entries li:last-child { border-bottom: 0; }
+.frame .entry input[type="checkbox"] { background: var(--paper); }
+.frame .entry input[type="checkbox"]:checked { background: var(--moss); }
+.dash .season { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 4px; padding: 20px 20px 8px; gap: 0; }
+.season .sec-head { margin-bottom: 14px; }
+.month { padding: 16px 16px 14px; margin: 0 -8px 12px; border: 1px solid transparent; border-radius: 3px; display: flex; flex-direction: column; gap: 6px; }
+.month .eyebrow { display: flex; justify-content: space-between; gap: 10px; }
+.month .mname { font-weight: 600; color: var(--ink); }
+.month h3 { font-style: italic; font-size: 1.3rem; margin-bottom: 4px; }
+.month .kind { font-size: .68rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); margin-top: 6px; }
+.month ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: .9rem; }
+.season .month li { display: grid; grid-template-columns: 18px minmax(0, 1fr); padding: 0; border-top: 0; font-size: .9rem; }
+.month .good li::before { content: "+"; color: var(--moss); font-weight: 700; }
+.month .bad li::before { content: "\00d7"; color: var(--clay); font-weight: 700; }
+.month.now { background: var(--card); border-color: var(--ink); box-shadow: inset 4px 0 0 var(--moss); padding-left: 20px; }
+.month.now .rel { background: var(--moss); color: var(--moss-ink); padding: 1px 8px; border-radius: 2px; font-weight: 600; }
+.month.past { opacity: .72; }
+@media (max-width: 1080px) { .wrap.dash { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .wrap.dash { display: flex; }
+  .dash .dash-main { display: contents; }
+  .dash .season { order: 4; }
+  .frame { padding: 16px 14px 8px; }
+  .dash .lead-text > div { width: 100%; }
+}

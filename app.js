@@ -12,19 +12,32 @@ const STYLES = ['Chokkan (formální vzpřímený)', 'Moyogi (volně vzpřímen�
 const TASK_HINTS = ['Přesadit', 'Drátovat', 'Odstranit drát', 'Strukturální střih', 'Udržovací střih', 'Hnojit', 'Zimní postřik', 'Defoliace',
   'Lámání svíček', 'Čištění starého jehličí', 'Přesunout do zimoviště', 'Vyfotit'];
 const LOG_TYPES = ['Přesazení', 'Drátování', 'Odstranění drátu', 'Střih', 'Hnojení', 'Postřik', 'Poznámka'];
+/* Sezónní rádce: [název období, co je vhodné, čemu se vyhnout] pro leden až prosinec. */
 const SEASON = [
-  ['Zimní klid', ['Kontrolujte vlhkost substrátu v zimovišti, nesmí úplně vyschnout.', 'Naplánujte přesazování a objednejte substráty a misky.', 'V bezmrazých dnech lze drátovat jehličnany.']],
-  ['Příprava na sezónu', ['Připravte a prosejte substráty.', 'Sledujte pupeny, ke konci měsíce začíná přesazování raných druhů.', 'Vhodná doba na zimní postřik proti přezimujícím škůdcům.']],
-  ['Hlavní čas přesazování', ['Listnáče přesazujte, jakmile nalévají pupeny.', 'Strukturální střih proveďte ještě před rašením.', 'Čerstvě přesazené stromy chraňte před mrazíky a větrem.']],
-  ['Rašení', ['Dokončete přesazování borovic a jalovců.', 'S hnojením začněte zhruba měsíc po přesazení.', 'Pozor na pozdní mrazy, mladé výhony jsou citlivé.']],
-  ['Růst naplno', ['Zaštipujte nové výhony listnáčů pro jemnější větvení.', 'Hnojte pravidelně.', 'Kontrolujte mšice a další škůdce na mladých výhonech.']],
-  ['Formování přírůstků', ['Defoliace jen u zdravých a silných listnáčů.', 'U borovic je čas na práci se svíčkami.', 'Kontrolujte dráty, v plném růstu rychle zarůstají.']],
-  ['Horko', ['V horku zalévejte i dvakrát denně, ideálně ráno a večer.', 'Citlivé druhy přistiňte před poledním sluncem.', 'Při vysokých teplotách hnojení omezte.']],
-  ['Pozdní léto', ['Zálivka zůstává prioritou.', 'Znovu zkontrolujte zarůstající dráty.', 'Koncem měsíce přejděte na hnojivo s nižším obsahem dusíku.']],
-  ['Podzimní příprava', ['Podzimní hnojení posiluje stromy před zimou.', 'Dobrá doba na drátování jehličnanů.', 'U borovic vyberte pupeny a proředte přehuštěná místa.']],
-  ['Barvení a opad', ['U borovic vyčistěte staré jehličí.', 'Po opadu listí je dobře vidět struktura, vhodná doba na drátování listnáčů.', 'Připravte zimoviště.']],
-  ['Zazimování', ['Po prvních mrazících přesuňte stromy do zimoviště.', 'Chraňte kořenový bal: zapusťte misky do země nebo zamulčujte.', 'Listnáče lze po opadu listí stříhat, větší rány zatřete.']],
-  ['Zimní klid', ['Občas zkontrolujte vlhkost substrátu.', 'Vyčistěte a nabruste nářadí.', 'Projděte fotky z roku a naplánujte další sezónu.']],
+  ['Zimní klid', ['Kontrolujte vlhkost substrátu v zimovišti, nesmí úplně vyschnout.', 'Naplánujte přesazování a objednejte substráty a misky.', 'V bezmrazých dnech lze drátovat jehličnany.'],
+    ['Nepřesazujte, kořeny teď nerostou.', 'Nezalévejte zmrzlý substrát a nehnojte.']],
+  ['Příprava na sezónu', ['Připravte a prosejte substráty.', 'Sledujte pupeny, ke konci měsíce začíná přesazování raných druhů.', 'Vhodná doba na zimní postřik proti přezimujícím škůdcům.'],
+    ['Nepřenášejte stromy předčasně do tepla, vyraší příliš brzy.', 'Nehnojte.']],
+  ['Hlavní čas přesazování', ['Listnáče přesazujte, jakmile nalévají pupeny.', 'Strukturální střih proveďte ještě před rašením.', 'Čerstvě přesazené stromy chraňte před mrazíky a větrem.'],
+    ['Nehnojte čerstvě přesazené stromy.', 'Nepřesazujte stromy, které už mají rozvinuté listy.']],
+  ['Rašení', ['Dokončete přesazování borovic a jalovců.', 'S hnojením začněte zhruba měsíc po přesazení.', 'Hlídejte pozdní mrazy, mladé výhony jsou citlivé.'],
+    ['Nepřesazujte listnáče v plném listu.', 'Nedávejte čerstvě přesazené stromy na plné slunce a vítr.']],
+  ['Růst naplno', ['Zaštipujte nové výhony listnáčů pro jemnější větvení.', 'Hnojte pravidelně.', 'Kontrolujte mšice a další škůdce na mladých výhonech.'],
+    ['Nepřesazujte, na většinu druhů je už pozdě.', 'Nedefoliujte slabé nebo loni přesazené stromy.']],
+  ['Formování přírůstků', ['Defoliace jen u zdravých a silných listnáčů.', 'U borovic je čas na práci se svíčkami.', 'Kontrolujte dráty, v plném růstu rychle zarůstají.'],
+    ['Nepřesazujte.', 'Nedělejte velké zásahy na oslabených stromech.']],
+  ['Horko', ['V horku zalévejte i dvakrát denně, ideálně ráno a večer.', 'Citlivé druhy přistiňte před poledním sluncem.', 'Při vysokých teplotách hnojení omezte.'],
+    ['Nepřesazujte a nedělejte silný střih.', 'Nenechávejte misky na rozpálené dlažbě, kořeny se přehřejí.']],
+  ['Pozdní léto', ['Zálivka zůstává prioritou.', 'Znovu zkontrolujte zarůstající dráty.', 'Koncem měsíce přejděte na hnojivo s nižším obsahem dusíku.'],
+    ['Nestříhejte silně, nové výhony by do zimy nevyzrály.', 'Koncem měsíce už nehnojte dusíkem.']],
+  ['Podzimní příprava', ['Podzimní hnojení posiluje stromy před zimou.', 'Dobrá doba na drátování jehličnanů.', 'U borovic vyberte pupeny a proředte přehuštěná místa.'],
+    ['Nehnojte dusíkatým hnojivem.', 'Nedělejte silný střih listnáčů.']],
+  ['Barvení a opad', ['U borovic vyčistěte staré jehličí.', 'Po opadu listí je dobře vidět struktura, vhodná doba na drátování listnáčů.', 'Připravte zimoviště.'],
+    ['Většinu druhů už nepřesazujte.', 'Nepřestávejte zalévat, i strom bez listí potřebuje vlhký substrát.']],
+  ['Zazimování', ['Po prvních mrazících přesuňte stromy do zimoviště.', 'Chraňte kořenový bal: zapusťte misky do země nebo zamulčujte.', 'Listnáče lze po opadu listí stříhat, větší rány zatřete.'],
+    ['Nenechávejte venkovní druhy v teple domova, potřebují zimní klid.', 'Nehnojte.']],
+  ['Zimní klid', ['Občas zkontrolujte vlhkost substrátu.', 'Vyčistěte a nabruste nářadí.', 'Projděte fotky z roku a naplánujte další sezónu.'],
+    ['Nepřelévejte, v chladu substrát vysychá pomalu.', 'Nepřenášejte stromy do vytápěné místnosti.']],
 ];
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -224,29 +237,29 @@ const strips = () => (pendingLocal ? `<div class="note-strip strip-wrap"><span>V
   (store.ok || cloud.user ? '' : '<div class="note-strip warn strip-wrap" role="alert"><span>Tento prohlížeč nepovolil ukládání. Změny vydrží jen do zavření stránky, proto si stáhněte zálohu.</span><button class="btn small quiet" data-act="settings">Záloha a data</button></div>') +
   (state.demo && !cloud.user ? '<div class="note-strip strip-wrap"><span>Deník je předvyplněný ukázkovými stromy a úkoly, abyste viděli, jak vypadá zaplněný.</span><button class="btn small quiet" data-act="clear-demo">Smazat ukázku a začít</button></div>' : '');
 
+function seasonHtml() {
+  const now = new Date().getMonth(), label = { '-1': 'minulý měsíc', 0: 'právě teď', 1: 'příští měsíc', 2: 'za dva měsíce' };
+  return `<aside class="season" aria-label="Sezónní rádce"><div class="sec-head"><h2>Sezóna</h2><span class="side">co dělat a čemu se vyhnout</span></div>
+    ${[-1, 0, 1, 2].map(off => { const m = (now + off + 12) % 12, [title, good, bad] = SEASON[m];
+      return `<section class="month ${off === 0 ? 'now' : off < 0 ? 'past' : ''}" ${off === 0 ? 'aria-current="true"' : ''}>
+        <p class="eyebrow"><span class="mname">${MONTHS[m]}</span><span class="rel">${label[off]}</span></p><h3>${title}</h3>
+        <p class="kind">Vhodné</p><ul class="good">${good.map(x => `<li>${x}</li>`).join('')}</ul>
+        <p class="kind">Nevhodné</p><ul class="bad">${bad.map(x => `<li>${x}</li>`).join('')}</ul></section>`; }).join('')}</aside>`;
+}
 function viewDashboard() {
   const n = new Date(), open = state.tasks.filter(t => !t.done), late = open.filter(t => dueInfo(t).cls === 'is-late').length;
-  const [sTitle, sTips] = SEASON[n.getMonth()];
-  const withPhoto = state.trees.filter(t => t.photos.length).sort((a, b) => coverPhoto(b).date.localeCompare(coverPhoto(a).date))[0];
-  const hero = withPhoto || state.trees[0];
-  return `<section class="lead">
-      <div class="lead-text"><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1 class="display">Bonsai deník</h1>
-        <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce, <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? `, z toho <strong>${late} po termínu</strong>` : ''}.</p>
-        <button class="btn primary" data-act="new-task"><span class="plus">+</span> Přidat úkol</button></div>
-      ${hero ? `<a class="lead-photo" href="#strom-${hero.id}"><span class="plate">${pic(hero, coverPhoto(hero), false)}</span>
-          <span class="plate-cap"><span>${esc(hero.name)}</span><span>${catNo(hero)} · ${esc(hero.species)}</span></span></a>`
-      : `<a class="lead-photo" href="#sbirka"><span class="plate">${EMPTY_POT}</span><span class="plate-cap"><span>Miska čeká na první strom</span><span>Moje sbírka →</span></span></a>`}
-    </section>
-    <div class="spread">
-      <section class="diary"><div class="sec-head"><h2>Nejbližší úkoly</h2><span class="side">řazeno podle termínu</span></div>
+  return `<div class="dash-main">
+      <header class="lead-text"><div><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1 class="display">Bonsai deník</h1>
+        <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce, <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? `, z toho <strong>${late} po termínu</strong>` : ''}.</p></div>
+        <button class="btn primary" data-act="new-task"><span class="plus">+</span> Přidat úkol</button></header>
+      <section class="diary frame"><div class="sec-head"><h2>Nejbližší úkoly</h2><span class="side">řazeno podle termínu</span></div>
         ${taskList(state.tasks, 'Diář je prázdný.', 'Zapište první úkol tlačítkem Přidat úkol, třeba přesazení na jaře.')}</section>
-      <aside class="season"><p class="eyebrow">${MONTHS[n.getMonth()]} v zahradě</p><h2>${sTitle}</h2>
-        <ol>${sTips.map(x => `<li>${x}</li>`).join('')}</ol></aside>
+      ${strips()}
+      <section class="catalog-sec"><div class="sec-head"><h2>Sbírka</h2><span class="side"><a href="#sbirka">Celý katalog →</a></span></div>
+        ${state.trees.length ? `<div class="catalog compact" style="padding-top:18px">${state.trees.slice(0, 12).map(t => item(t, true)).join('')}</div>`
+        : `<div class="blank"><strong>Zatím bez stromů.</strong><span>První strom přidáte v sekci Moje sbírka.</span><a class="btn small" href="#sbirka">Otevřít sbírku</a></div>`}</section>
     </div>
-    ${strips()}
-    <section class="catalog-sec"><div class="sec-head"><h2>Sbírka</h2><span class="side"><a href="#sbirka">Celý katalog →</a></span></div>
-      ${state.trees.length ? `<div class="catalog compact" style="padding-top:18px">${state.trees.slice(0, 12).map(t => item(t, true)).join('')}</div>`
-      : `<div class="blank"><strong>Zatím bez stromů.</strong><span>První strom přidáte v sekci Moje sbírka.</span><a class="btn small" href="#sbirka">Otevřít sbírku</a></div>`}</section>`;
+    ${seasonHtml()}`;
 }
 
 function item(t, compact) {
