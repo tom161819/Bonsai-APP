@@ -289,3 +289,14 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
 #toast.bad::before { content: "Chyba: "; font-weight: 700; }
 input[type="file"] { width: 100%; min-height: 44px; font-size: .88rem; color: var(--ink-2); }
 input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px; padding: 8px 14px; border: 1px solid var(--ink); border-radius: 3px; background: transparent; color: var(--ink); font: 500 .88rem var(--sans); cursor: pointer; }
+
+/* Desktop: navigace v levém sloupci */
+@media (min-width: 761px) {
+  #app { display: grid; grid-template-columns: 212px minmax(0, 1fr); min-height: 100%; }
+  .top { border-bottom: 0; border-right: 1px solid var(--rule); position: sticky; top: 0; align-self: start; height: 100dvh; }
+  .top-in { flex-direction: column; align-items: flex-start; gap: 36px; height: 100%; max-width: none; margin: 0;
+    padding: 28px 20px 24px max(24px, env(safe-area-inset-left, 0px)); }
+  .links { flex-direction: column; align-items: flex-start; gap: 6px; flex: 1; }
+  .links a { padding: 7px 0; }
+  .top .util { margin-left: 0; }
+}
