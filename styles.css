@@ -287,3 +287,5 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
   background: var(--ink); color: var(--paper); font-weight: 500; font-size: .88rem; max-width: calc(100vw - 32px); text-align: center; }
 #toast.bad { background: var(--clay); color: var(--paper); }
 #toast.bad::before { content: "Chyba: "; font-weight: 700; }
+input[type="file"] { width: 100%; min-height: 44px; font-size: .88rem; color: var(--ink-2); }
+input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px; padding: 8px 14px; border: 1px solid var(--ink); border-radius: 3px; background: transparent; color: var(--ink); font: 500 .88rem var(--sans); cursor: pointer; }
