@@ -1,4 +1,4 @@
-# Bonsai APP
+# Bonsai deník
 
 Aplikace pro pěstitele bonsají: přehled úkolů, sbírka stromů s fotkami a deníkem péče, připravovaná mapa yamadori.
 

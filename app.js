@@ -1,5 +1,5 @@
 'use strict';
-/* Bonsai APP – prototyp. Data se ukládají lokálně v prohlížeči (IndexedDB). */
+/* Bonsai deník. Data se ukládají lokálně v prohlížeči (IndexedDB). */
 
 const MONTHS = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const MONTHS_GEN = ['ledna', 'února', 'března', 'dubna', 'května', 'června', 'července', 'srpna', 'září', 'října', 'listopadu', 'prosince'];
@@ -42,7 +42,7 @@ let state = { trees: [], tasks: [], demo: false };
 
 /* ---------- Úložiště ---------- */
 const store = {
-  db: null,
+  db: null, ok: true,
   open() {
     return new Promise((res, rej) => {
       const r = indexedDB.open('bonsai-app', 1);
@@ -58,11 +58,11 @@ const store = {
         const q = this.db.transaction('kv').objectStore('kv').get('state');
         q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
       });
-    } catch (e) { this.db = null; return null; }
+    } catch (e) { this.db = null; this.ok = false; return null; }
   },
   save() {
     if (!this.db) return;
-    try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(state, 'state'); } catch (e) { /* bez úložiště běží dál v paměti */ }
+    try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(state, 'state'); } catch (e) { this.ok = false; }
   },
 };
 function commit(msg) { store.save(); render(); if (msg) toast(msg); }
@@ -93,100 +93,111 @@ function demoState() {
 }
 
 /* ---------- Pomocné funkce pro úkoly ---------- */
+const MON = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];
 function deadline(t) {
   if (!t.due) return null;
   const [y, m, d] = t.due.split('-').map(Number);
   return t.due.length === 7 ? new Date(y, m, 0) : new Date(y, m - 1, d);
 }
+/* Stav se vždy sděluje i slovem a značkou, ne jen barvou. */
 function dueInfo(t) {
-  if (!t.due) return { label: 'bez termínu', cls: '' };
+  if (!t.due) return { text: '', cls: '' };
   const diff = Math.round((deadline(t) - today()) / 864e5);
+  if (diff < 0) return { text: t.due.length === 7 ? '▲ po termínu' : `▲ ${-diff} ${days(-diff)} po termínu`, cls: 'is-late' };
   if (t.due.length === 7) {
-    const [y, m] = t.due.split('-').map(Number), label = `${MONTHS[m - 1]} ${y}`, n = today();
-    if (diff < 0) return { label: `${label} · po termínu`, cls: 'late' };
-    if (n.getFullYear() === y && n.getMonth() === m - 1) return { label: `${label} · tento měsíc`, cls: 'soon' };
-    return { label, cls: '' };
+    const [y, m] = t.due.split('-').map(Number), n = today();
+    return n.getFullYear() === y && n.getMonth() === m - 1 ? { text: '◆ tento měsíc', cls: 'is-soon' } : { text: '', cls: '' };
   }
-  const label = fmtDate(t.due);
-  if (diff < 0) return { label: `${label} · ${-diff} ${days(-diff)} po termínu`, cls: 'late' };
-  if (diff === 0) return { label: `${label} · dnes`, cls: 'soon' };
-  if (diff === 1) return { label: `${label} · zítra`, cls: 'soon' };
-  if (diff <= 14) return { label: `${label} · za ${diff} ${days(diff)}`, cls: 'soon' };
-  return { label, cls: '' };
+  if (diff === 0) return { text: '◆ dnes', cls: 'is-soon' };
+  if (diff === 1) return { text: '◆ zítra', cls: 'is-soon' };
+  if (diff <= 14) return { text: `◆ za ${diff} ${days(diff)}`, cls: 'is-soon' };
+  return { text: '', cls: '' };
 }
 const byDeadline = (a, b) => (deadline(a)?.getTime() ?? Infinity) - (deadline(b)?.getTime() ?? Infinity);
 const tree = id => state.trees.find(t => t.id === id);
 const speciesInUse = () => [...new Set(state.trees.map(t => t.species).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'cs'));
-function scopeChip(s) {
-  if (s.type === 'tree') { const t = tree(s.value); return t ? `<a class="chip tree" href="#strom-${t.id}">${esc(t.name)}</a>` : '<span class="chip">Smazaný strom</span>'; }
-  if (s.type === 'species') return `<span class="chip species">Všechny: ${esc(s.value)}</span>`;
-  return '<span class="chip">Obecné</span>';
+const tasksFor = t => state.tasks.filter(x => (x.scope.type === 'tree' && x.scope.value === t.id) || (x.scope.type === 'species' && x.scope.value === t.species));
+function scopeTag(s) {
+  if (s.type === 'tree') { const t = tree(s.value); return t ? `<a class="tag t" href="#strom-${t.id}" title="Úkol pro strom ${esc(t.name)}">${esc(t.name)}</a>` : '<span class="tag g">Smazaný strom</span>'; }
+  if (s.type === 'species') return `<span class="tag s" title="Úkol pro všechny stromy druhu ${esc(s.value)}">${esc(s.value)}</span>`;
+  return '<span class="tag g" title="Obecný úkol">Obecné</span>';
+}
+function whenCol(t) {
+  const s = t.done && t.doneAt ? t.doneAt : t.due;
+  if (!s) return '<span class="d word">—</span><span class="m">bez termínu</span>';
+  const [y, m, d] = s.split('-').map(Number);
+  return s.length === 7 ? `<span class="d word">${MONTHS[m - 1]}</span><span class="m">${y}</span>` : `<span class="d">${d}.</span><span class="m">${MON[m - 1]} ${y}</span>`;
 }
 function taskRow(t) {
-  const d = dueInfo(t);
-  return `<li class="task ${t.done ? 'done' : d.cls}">
-    <input type="checkbox" id="chk-${t.id}" data-change="toggle-task" data-id="${t.id}" ${t.done ? 'checked' : ''}>
-    <div class="task-main"><label for="chk-${t.id}">${esc(t.title)}</label>
-      <div class="task-meta"><span class="due">${t.done && t.doneAt ? 'hotovo ' + fmtDate(t.doneAt) : d.label}</span>${scopeChip(t.scope)}</div>
-      ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ''}</div>
-    <button class="icon-btn" data-act="edit-task" data-id="${t.id}" aria-label="Upravit úkol" title="Upravit">⋯</button></li>`;
+  const d = t.done ? { text: '✓ hotovo', cls: 'is-done' } : dueInfo(t);
+  return `<li class="entry ${d.cls}">
+    <label class="tick" for="chk-${t.id}"><input type="checkbox" id="chk-${t.id}" data-change="toggle-task" data-id="${t.id}" ${t.done ? 'checked' : ''} aria-label="${t.done ? 'Vrátit mezi otevřené' : 'Označit jako hotové'}: ${esc(t.title)}"></label>
+    <div class="when">${whenCol(t)}</div>
+    <div class="what"><label for="chk-${t.id}">${esc(t.title)}</label>
+      <div class="meta">${d.text ? `<span class="state">${d.text}</span>` : ''}${scopeTag(t.scope)}</div>
+      ${t.note ? `<div class="memo">${esc(t.note)}</div>` : ''}</div>
+    <button class="icon-btn" data-act="edit-task" data-id="${t.id}" aria-label="Upravit úkol ${esc(t.title)}" title="Upravit">⋯</button></li>`;
 }
-function taskList(tasks, emptyText) {
+function taskList(tasks, emptyTitle, emptyText) {
   const open = tasks.filter(t => !t.done).sort(byDeadline);
   const done = tasks.filter(t => t.done).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
-  return (open.length ? `<ul class="tasks">${open.map(taskRow).join('')}</ul>` : `<p class="empty">${emptyText}</p>`) +
-    (done.length ? `<details class="done-list"><summary>Hotovo (${done.length})</summary><ul class="tasks">${done.map(taskRow).join('')}</ul></details>` : '');
+  return (open.length ? `<ul class="entries">${open.map(taskRow).join('')}</ul>` : `<div class="blank"><strong>${emptyTitle}</strong><span>${emptyText}</span></div>`) +
+    (done.length ? `<details class="done-list"><summary>Splněné (${done.length})</summary><ul class="entries">${done.map(taskRow).join('')}</ul></details>` : '');
 }
 
-/* ---------- Ilustrace stromu (když chybí fotka) ---------- */
+/* ---------- Obraz stromu: fotografie, nebo tušová kresba ---------- */
+const POS = { top: '50% 10%', center: '50% 50%', bottom: '50% 90%' };
 const illuCache = new Map();
 function illustration(t) {
   const key = t.id + '|' + t.species;
   if (illuCache.has(key)) return illuCache.get(key);
-  let seed = 0; for (const c of key) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
+  let seed = 7; for (const c of key) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const f = n => n.toFixed(1);
   const sp = (t.species || '').toLowerCase();
-  const conifer = /borovic|jalovec|smrk|tis|modřín|jedle|cypři/.test(sp);
-  const leaf = /javor/.test(sp) ? ['#C8553A', '#E08A4A'] : conifer ? ['#2F6B4A', '#4C8A62'] : ['#5C9A55', '#86B86B'];
-  const c = document.createElement('canvas'); c.width = c.height = 400;
-  const g = c.getContext('2d');
-  g.lineCap = 'round'; g.lineJoin = 'round';
-  g.fillStyle = '#5E6F7C'; g.beginPath(); g.roundRect(118, 322, 164, 34, 7); g.fill();
-  g.fillRect(138, 356, 22, 8); g.fillRect(240, 356, 22, 8);
-  g.fillStyle = '#7C8C6A'; g.beginPath(); g.ellipse(200, 322, 74, 7, 0, 0, Math.PI * 2); g.fill();
-  const lean = (rnd() - .5) * 26, pts = [[200, 322]], n = 5 + Math.floor(rnd() * 2);
-  for (let i = 1; i <= n; i++) { const p = pts[i - 1]; pts.push([p[0] + lean * (i < 3 ? 1 : -.6) + (rnd() - .5) * 34, p[1] - (232 / n)]); }
-  const pads = [];
-  g.strokeStyle = '#7A5B46';
+  const conifer = /borovic|jalovec|smrk|tis|modřín|jedle|cypři/.test(sp), maple = /javor/.test(sp);
+  const lean = (rnd() - .5) * 30, n = 6, pts = [[200, 404]];
+  for (let i = 1; i <= n; i++) { const p = pts[i - 1]; pts.push([p[0] + lean * (1 - i / n * 1.7) + (rnd() - .5) * 22, p[1] - 40 - rnd() * 6]); }
+  let trunk = '', limbs = '', pads = '';
+  const pad = (x, y, r) => { for (let k = 0; k < 6; k++) pads += `<ellipse cx="${f(x + (rnd() - .5) * r * 1.5)}" cy="${f(y + (rnd() - .65) * r * .6)}" rx="${f(r * (.5 + rnd() * .4))}" ry="${f(r * (conifer ? .26 : .42) * (.8 + rnd() * .4))}"/>`; };
   for (let i = 1; i <= n; i++) {
-    const a = pts[i - 1], b = pts[i], w = 26 - (i - 1) * (20 / n);
-    g.lineWidth = w; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+    const a = pts[i - 1], b = pts[i], w = 24 - (i - 1) * 3.6;
+    trunk += `<line x1="${f(a[0])}" y1="${f(a[1])}" x2="${f(b[0])}" y2="${f(b[1])}" stroke-width="${f(w)}"/>`;
     if (i >= 2 && i < n) {
-      const side = i % 2 ? 1 : -1, len = (95 - i * 9) * (.7 + rnd() * .5), ex = b[0] + side * len, ey = b[1] - 6 - rnd() * 18;
-      g.lineWidth = Math.max(3, w * .4); g.beginPath(); g.moveTo(b[0], b[1]); g.quadraticCurveTo(b[0] + side * len * .5, b[1] + 6, ex, ey); g.stroke();
-      pads.push([ex, ey, 40 - i * 3]);
+      const side = i % 2 ? 1 : -1, len = (104 - i * 11) * (.75 + rnd() * .4), ex = b[0] + side * len, ey = b[1] - 4 - rnd() * 16;
+      limbs += `<path d="M${f(b[0])} ${f(b[1])}Q${f(b[0] + side * len * .5)} ${f(b[1] + 8)} ${f(ex)} ${f(ey)}" stroke-width="${f(Math.max(2.500, w * .34))}"/>`;
+      pad(ex, ey, 44 - i * 3);
     }
   }
-  pads.push([pts[n][0], pts[n][1] - 4, 38]);
-  for (const [x, y, r] of pads) for (let k = 0; k < 7; k++) {
-    g.fillStyle = leaf[k % 2]; g.globalAlpha = .9;
-    g.beginPath(); g.ellipse(x + (rnd() - .5) * r * 1.5, y + (rnd() - .6) * r * .7, r * (.5 + rnd() * .4), r * (conifer ? .3 : .45) * (.8 + rnd() * .4), 0, 0, Math.PI * 2); g.fill();
-  }
-  const url = c.toDataURL('image/png'); illuCache.set(key, url); return url;
+  pad(pts[n][0], pts[n][1] - 2, 40);
+  const deep = rnd() > .5, ph = deep ? 34 : 24;
+  const svg = `<svg class="ink" viewBox="0 0 400 460" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Kresba místo fotografie: ${esc(t.name || t.species || 'strom')}">
+    <circle cx="${rnd() > .5 ? 292 : 108}" cy="${f(150 + rnd() * 40)}" r="74" fill="var(--clay-wash)"/>
+    <line x1="36" y1="${404 + ph + 6.500}" x2="364" y2="${404 + ph + 6.500}" stroke="var(--rule)" stroke-width="1"/>
+    <g fill="var(--clay)"><path d="M116 404h168l-${deep ? 10 : 16} ${ph}h-${deep ? 148 : 136}z"/><rect x="142" y="${404 + ph}" width="20" height="6"/><rect x="238" y="${404 + ph}" width="20" height="6"/></g>
+    <g fill="none" stroke="var(--ink)" stroke-linecap="round">${trunk}${limbs}</g>
+    <g fill="${maple ? 'var(--clay)' : 'var(--moss)'}" opacity="${conifer ? .62 : .5}">${pads}</g></svg>`;
+  illuCache.set(key, svg); return svg;
 }
-function cover(t) {
-  const p = t.photos.find(p => p.id === t.coverId) || [...t.photos].sort((a, b) => b.date.localeCompare(a.date))[0];
-  return p ? p.data : illustration(t);
+const EMPTY_POT = `<svg class="ink" viewBox="0 0 400 460" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Kresba prázdné misky">
+  <circle cx="290" cy="170" r="74" fill="var(--clay-wash)"/><line x1="36" y1="434.500" x2="364" y2="434.500" stroke="var(--rule)"/>
+  <g fill="var(--clay)"><path d="M116 404h168l-16 24h-136z"/><rect x="142" y="428" width="20" height="6"/><rect x="238" y="428" width="20" height="6"/></g>
+  <path d="M200 404v-34" stroke="var(--ink)" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <g fill="var(--moss)" opacity=".6"><ellipse cx="188" cy="366" rx="14" ry="6" transform="rotate(-24 188 366)"/><ellipse cx="213" cy="362" rx="14" ry="6" transform="rotate(22 213 362)"/></g></svg>`;
+const coverPhoto = t => t.photos.find(p => p.id === t.coverId) || [...t.photos].sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+function pic(t, p = coverPhoto(t), lazy = true) {
+  return p ? `<img src="${p.data}" alt="${esc(p.caption || t.name)}" style="object-position:${POS[p.focus] || POS.center}" ${lazy ? 'loading="lazy"' : ''}>` : illustration(t) + '<span class="nophoto">bez fotografie</span>';
 }
+const catNo = t => 'N° ' + pad(state.trees.indexOf(t) + 1);
 
 /* ---------- Ikony ---------- */
-const ico = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ico = d => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.500" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICON = {
-  home: ico('<path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/>'),
-  tree: ico('<path d="M12 21v-8M7 21h10M12 13c-4 0-7-2-7-5s3-5 7-5 7 2 7 5-3 5-7 5z"/>'),
-  map: ico('<path d="M12 21s6-5.5 6-10.5a6 6 0 0 0-12 0C6 15.500 12 21 12 21z"/><circle cx="12" cy="10.500" r="2"/>'),
-  cog: ico('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.600 5.600l2.100 2.100M16.300 16.300l2.100 2.100M5.600 18.400l2.100-2.100M16.300 7.700l2.100-2.100"/>'),
+  home: ico('<path d="M5 4h14v16H5zM9 4v16M12.500 9h3.500M12.500 13h3.500"/>'),
+  tree: ico('<path d="M12 17v-5M7 17h10l-1 3H8zM12 12c-4 0-7-1.500-7-4.500S8 3 12 3s7 1.500 7 4.500S16 12 12 12z"/>'),
+  map: ico('<path d="M12 21s6-5.500 6-10.500a6 6 0 0 0-12 0C6 15.500 12 21 12 21z"/><circle cx="12" cy="10.500" r="2"/>'),
 };
+const SEAL = `<svg class="seal" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="3" fill="var(--clay)"/><g fill="none" stroke="var(--paper)" stroke-width="1.600" stroke-linecap="round"><path d="M13 19v-6c0-2 2-2.500 3.500-4"/><path d="M8 19h10"/><path d="M7 10.500h7M12.500 7h7"/></g></svg>`;
 
 /* ---------- Vykreslení ---------- */
 function route() {
@@ -198,110 +209,123 @@ let filter = { q: '', species: '' };
 function render() {
   const r = route(), cur = v => (r.view === v || (v === 'sbirka' && r.view === 'tree')) ? 'aria-current="page"' : '';
   const body = r.view === 'tree' ? viewTree(r.id) : r.view === 'sbirka' ? viewCollection() : r.view === 'yamadori' ? viewYamadori() : viewDashboard();
-  $('#app').innerHTML = `<div class="shell">
-    <aside class="side"><div class="brand">${ICON.tree}<span>Bonsai APP</span></div>
-      <nav class="nav" aria-label="Hlavní navigace">
-        <a href="#prehled" ${cur('prehled')}>${ICON.home}<span>Přehled</span></a>
-        <a href="#sbirka" ${cur('sbirka')}>${ICON.tree}<span>Moje sbírka</span></a>
-        <a href="#yamadori" ${cur('yamadori')}>${ICON.map}<span>Yamadori</span><span class="tag-dev">vývoj</span></a>
-        <span class="spacer"></span>
-        <button data-act="settings">${ICON.cog}<span>Záloha</span></button>
-      </nav></aside>
-    <main><div class="wrap">${body}</div></main></div>`;
+  const link = (v, label, extra = '') => `<a href="#${v}" ${cur(v)}>${label}${extra}</a>`;
+  $('#app').innerHTML = `<header class="top"><div class="top-in gut">
+      <a class="brand" href="#prehled" aria-label="Bonsai deník, přehled">${SEAL}${r.view === 'prehled' ? '' : '<span>Bonsai deník</span>'}</a>
+      <nav class="links" aria-label="Hlavní navigace">${link('prehled', 'Přehled')}${link('sbirka', 'Moje sbírka')}${link('yamadori', 'Yamadori', '<span class="soon-tag">ve vývoji</span>')}</nav>
+      <button class="util" data-act="settings">Záloha a data</button></div></header>
+    <main class="gut"><div class="wrap ${r.view === 'prehled' ? 'dash' : ''}">${body}</div></main>
+    <nav class="tabs" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('sbirka', ICON.tree + '<span>Sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>')}</nav>`;
 }
+const strips = () => (store.ok ? '' : '<div class="note-strip warn strip-wrap" role="alert"><span>Tento prohlížeč nepovolil ukládání. Změny vydrží jen do zavření stránky, proto si stáhněte zálohu.</span><button class="btn small quiet" data-act="settings">Záloha a data</button></div>') +
+  (state.demo ? '<div class="note-strip strip-wrap"><span>Deník je předvyplněný ukázkovými stromy a úkoly, abyste viděli, jak vypadá zaplněný.</span><button class="btn small quiet" data-act="clear-demo">Smazat ukázku a začít</button></div>' : '');
 
 function viewDashboard() {
-  const n = new Date(), open = state.tasks.filter(t => !t.done), late = open.filter(t => dueInfo(t).cls === 'late').length;
+  const n = new Date(), open = state.tasks.filter(t => !t.done), late = open.filter(t => dueInfo(t).cls === 'is-late').length;
   const [sTitle, sTips] = SEASON[n.getMonth()];
-  const shots = state.trees.flatMap(t => t.photos.length
-    ? t.photos.map(p => ({ src: p.data, date: p.date, t, illu: false }))
-    : [{ src: illustration(t), date: '', t, illu: true }]).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
-  return `<header class="page-head"><div><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1>Přehled</h1>
-      <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce · <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? ` · <strong class="late">${late} po termínu</strong>` : ''}</p></div>
-      <button class="btn primary" data-act="new-task">+ Přidat úkol</button></header>
-    ${state.demo ? `<div class="banner"><span>Vidíte ukázková data, aby bylo jasné, jak aplikace vypadá naplněná.</span><button class="btn small" data-act="clear-demo">Smazat ukázku a začít</button></div>` : ''}
-    <div class="dash-grid">
-      <section class="panel"><div class="sec-head"><h2>Úkoly</h2><span class="muted">podle nejbližšího termínu</span></div>
-        ${taskList(state.tasks, 'Žádné otevřené úkoly. Přidejte první tlačítkem nahoře.')}</section>
-      <section class="panel season"><p class="eyebrow">${MONTHS[n.getMonth()]} · sezónní tipy</p><h2>${sTitle}</h2>
-        <ul>${sTips.map(x => `<li>${x}</li>`).join('')}</ul></section>
+  const withPhoto = state.trees.filter(t => t.photos.length).sort((a, b) => coverPhoto(b).date.localeCompare(coverPhoto(a).date))[0];
+  const hero = withPhoto || state.trees[0];
+  return `<section class="lead">
+      <div class="lead-text"><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1 class="display">Bonsai deník</h1>
+        <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce, <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? `, z toho <strong>${late} po termínu</strong>` : ''}.</p>
+        <button class="btn primary" data-act="new-task"><span class="plus">+</span> Přidat úkol</button></div>
+      ${hero ? `<a class="lead-photo" href="#strom-${hero.id}"><span class="plate">${pic(hero, coverPhoto(hero), false)}</span>
+          <span class="plate-cap"><span>${esc(hero.name)}</span><span>${catNo(hero)} · ${esc(hero.species)}</span></span></a>`
+      : `<a class="lead-photo" href="#sbirka"><span class="plate">${EMPTY_POT}</span><span class="plate-cap"><span>Miska čeká na první strom</span><span>Moje sbírka →</span></span></a>`}
+    </section>
+    <div class="spread">
+      <section class="diary"><div class="sec-head"><h2>Nejbližší úkoly</h2><span class="side">řazeno podle termínu</span></div>
+        ${taskList(state.tasks, 'Diář je prázdný.', 'Zapište první úkol tlačítkem Přidat úkol, třeba přesazení na jaře.')}</section>
+      <aside class="season"><p class="eyebrow">${MONTHS[n.getMonth()]} v zahradě</p><h2>${sTitle}</h2>
+        <ol>${sTips.map(x => `<li>${x}</li>`).join('')}</ol></aside>
     </div>
-    <section><div class="sec-head"><h2>Galerie</h2><a class="btn small ghost" href="#sbirka">Celá sbírka →</a></div>
-      ${shots.length ? `<div class="gallery">${shots.map(s => `<a class="shot ${s.illu ? 'illu' : ''}" href="#strom-${s.t.id}"><img src="${s.src}" alt="${esc(s.t.name)}" loading="lazy"><span class="cap">${esc(s.t.name)}</span></a>`).join('')}</div>`
-      : '<p class="empty">Zatím žádné stromy. Přidejte první v sekci Moje sbírka.</p>'}</section>`;
+    ${strips()}
+    <section class="catalog-sec"><div class="sec-head"><h2>Sbírka</h2><span class="side"><a href="#sbirka">Celý katalog →</a></span></div>
+      ${state.trees.length ? `<div class="catalog compact" style="padding-top:18px">${state.trees.slice(0, 12).map(t => item(t, true)).join('')}</div>`
+      : `<div class="blank"><strong>Zatím bez stromů.</strong><span>První strom přidáte v sekci Moje sbírka.</span><a class="btn small" href="#sbirka">Otevřít sbírku</a></div>`}</section>`;
 }
 
-function viewCollection() {
+function item(t, compact) {
+  const open = tasksFor(t).filter(x => !x.done).length, counts = [open ? `${open} ${plural(open, 'úkol', 'úkoly', 'úkolů')}` : '', t.photos.length ? `${t.photos.length} ${plural(t.photos.length, 'fotografie', 'fotografie', 'fotografií')}` : ''].filter(Boolean).join(' · ');
+  return `<a class="item" href="#strom-${t.id}"><span class="plate">${pic(t)}</span>
+    <span class="line"><span class="no">${catNo(t)}</span><h3>${esc(t.name)}</h3></span>
+    <span class="sub">${esc(t.species || 'Druh neuveden')}</span>${!compact && counts ? `<span class="counts">${counts}</span>` : ''}</a>`;
+}
+function catalogHtml() {
   const q = filter.q.toLowerCase();
   const list = state.trees.filter(t => (!filter.species || t.species === filter.species) && (!q || (t.name + ' ' + t.species).toLowerCase().includes(q)));
-  return `<header class="page-head"><div><h1>Moje sbírka</h1><p class="summary">${state.trees.length} ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} · ${speciesInUse().length} ${plural(speciesInUse().length, 'druh', 'druhy', 'druhů')}</p></div>
-      <button class="btn primary" data-act="new-tree">+ Přidat strom</button></header>
-    <div class="filters"><input type="search" id="flt-q" placeholder="Hledat podle názvu nebo druhu" value="${esc(filter.q)}" data-input="filter-q" aria-label="Hledat">
-      <select id="flt-species" data-change="filter-species" aria-label="Filtr podle druhu"><option value="">Všechny druhy</option>${speciesInUse().map(s => `<option ${s === filter.species ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
-    <div id="cards">${cardsHtml(list)}</div>`;
+  return list.length ? `<div class="catalog">${list.map(t => item(t)).join('')}</div>`
+    : `<div class="blank"><strong>Nic nenalezeno.</strong><span>Hledání ani filtru neodpovídá žádný strom. Zkuste jiný název nebo druh.</span><button class="btn small" data-act="reset-filter">Zrušit filtr</button></div>`;
 }
-function cardsHtml(list) {
-  if (!list.length) return `<p class="empty">${state.trees.length ? 'Filtru neodpovídá žádný strom.' : 'Sbírka je prázdná. Přidejte svůj první strom.'}</p>`;
-  return `<div class="cards">${list.map(t => {
-    const open = tasksFor(t).filter(x => !x.done).length;
-    return `<a class="card" href="#strom-${t.id}"><div class="pic"><img src="${cover(t)}" alt="" loading="lazy"></div>
-      <div class="body"><h3>${esc(t.name)}</h3><span class="sub">${esc(t.species || 'Druh neuveden')}${t.acquired ? ` · od ${esc(t.acquired)}` : ''}</span>
-      <div class="foot">${open ? `<span class="chip tree">${open} ${plural(open, 'úkol', 'úkoly', 'úkolů')}</span>` : ''}${t.photos.length ? `<span class="chip">${t.photos.length} ${plural(t.photos.length, 'fotka', 'fotky', 'fotek')}</span>` : ''}</div></div></a>`;
-  }).join('')}</div>`;
+function viewCollection() {
+  const sp = speciesInUse();
+  if (!state.trees.length) return `<header class="page-head"><div><p class="eyebrow">Katalog</p><h1>Moje sbírka</h1></div></header>
+    <div class="empty-shelf"><span class="plate">${EMPTY_POT}</span><div class="txt"><h2>Sbírka čeká na první strom</h2>
+      <p class="muted">Každý strom dostane vlastní stránku s fotografiemi, poznámkami, úkoly a deníkem péče. Stačí název a druh, zbytek doplníte časem.</p>
+      <button class="btn primary" data-act="new-tree"><span class="plus">+</span> Přidat první strom</button></div></div>`;
+  return `<header class="page-head"><div><p class="eyebrow">Katalog · ${state.trees.length} ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} · ${sp.length} ${plural(sp.length, 'druh', 'druhy', 'druhů')}</p><h1>Moje sbírka</h1></div>
+      <button class="btn primary" data-act="new-tree"><span class="plus">+</span> Přidat strom</button></header>
+    <div class="filters"><input type="search" id="flt-q" placeholder="Hledat podle názvu nebo druhu" value="${esc(filter.q)}" data-input="filter-q" aria-label="Hledat ve sbírce">
+      <select id="flt-species" data-change="filter-species" aria-label="Filtr podle druhu"><option value="">Všechny druhy</option>${sp.map(s => `<option ${s === filter.species ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+    <div id="cards">${catalogHtml()}</div>`;
 }
-const tasksFor = t => state.tasks.filter(x => (x.scope.type === 'tree' && x.scope.value === t.id) || (x.scope.type === 'species' && x.scope.value === t.species));
 
 function viewTree(id) {
   const t = tree(id);
-  if (!t) return `<a class="back" href="#sbirka">← Moje sbírka</a><p class="empty">Tento strom ve sbírce není.</p>`;
+  if (!t) return `<a class="back" href="#sbirka">← Moje sbírka</a><div class="blank"><strong>Tato stránka v deníku není.</strong><span>Strom byl nejspíš smazán nebo odkaz neplatí.</span><a class="btn small" href="#sbirka">Zpět do sbírky</a></div>`;
   const photos = [...t.photos].sort((a, b) => b.date.localeCompare(a.date));
   const log = [...t.log].sort((a, b) => b.date.localeCompare(a.date));
   const fact = (k, v) => v ? `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>` : '';
   return `<a class="back" href="#sbirka">← Moje sbírka</a>
-    <section class="tree-hero"><div class="pic"><img src="${cover(t)}" alt="${esc(t.name)}"></div>
-      <div class="tree-info"><div><p class="eyebrow">${esc(t.species || 'Druh neuveden')}</p><h1>${esc(t.name)}</h1></div>
-        <dl class="facts">${fact('Styl', t.style)}${fact('Ve sbírce od', t.acquired)}${fact('Původ', t.origin)}${fact('Miska', t.pot)}</dl>
-        ${t.notes ? `<p class="notes">${esc(t.notes)}</p>` : ''}
-        <div class="btns"><button class="btn" data-act="edit-tree" data-id="${t.id}">Upravit údaje</button><button class="btn danger" data-act="del-tree" data-id="${t.id}">Smazat strom</button></div></div></section>
-    <div class="cols">
-      <section class="panel"><div class="sec-head"><h2>Úkoly</h2><button class="btn small primary" data-act="new-task" data-tree="${t.id}">+ Přidat úkol</button></div>
-        ${taskList(tasksFor(t), 'Pro tento strom není naplánováno nic.')}</section>
-      <section class="panel"><div class="sec-head"><h2>Deník péče</h2><button class="btn small" data-act="new-log" data-id="${t.id}">+ Záznam</button></div>
-        ${log.length ? `<ul class="log">${log.map(l => `<li><time>${fmtDate(l.date)}</time><div><div class="what">${esc(l.type)}</div>${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}</div>
-          <button class="icon-btn" data-act="del-log" data-id="${t.id}" data-log="${l.id}" aria-label="Smazat záznam" title="Smazat">×</button></li>`).join('')}</ul>`
-        : '<p class="empty">Zatím žádné záznamy. Splněné úkoly se sem zapisují samy.</p>'}</section>
+    <article class="leaf"><div class="plate">${pic(t, coverPhoto(t), false)}</div>
+      <div class="leaf-text"><header><p class="eyebrow">${catNo(t)} · ${esc(t.species || 'Druh neuveden')}</p><h1>${esc(t.name)}</h1></header>
+        ${t.style || t.acquired || t.origin || t.pot ? `<dl class="facts">${fact('Styl', t.style)}${fact('Ve sbírce od', t.acquired)}${fact('Původ', t.origin)}${fact('Miska', t.pot)}</dl>` : ''}
+        <div class="stack"><h2 class="notes-h">Pěstitelské poznámky</h2>
+          ${t.notes ? `<p class="notes">${esc(t.notes)}</p>` : '<p class="muted">Zatím prázdné. Zapište si, co na stromě pozorujete a kam ho chcete vést.</p>'}</div>
+        <div class="btns"><button class="btn" data-act="edit-tree" data-id="${t.id}">Upravit údaje a poznámky</button><button class="btn danger" data-act="del-tree" data-id="${t.id}">Smazat strom</button></div></div></article>
+    <div class="spread even">
+      <section><div class="sec-head"><h2>Úkoly</h2><button class="btn small primary" data-act="new-task" data-tree="${t.id}"><span class="plus">+</span> Přidat úkol</button></div>
+        ${taskList(tasksFor(t), 'Nic naplánováno.', 'Úkol přidaný odsud dostane štítek tohoto stromu.')}</section>
+      <section><div class="sec-head"><h2>Deník péče</h2><button class="btn small" data-act="new-log" data-id="${t.id}"><span class="plus">+</span> Záznam</button></div>
+        ${log.length ? `<ul class="log">${log.map(l => `<li><time datetime="${l.date}">${fmtDate(l.date)}</time><div><div class="kind">${esc(l.type)}</div>${l.note ? `<div class="memo">${esc(l.note)}</div>` : ''}</div>
+          <button class="icon-btn" data-act="del-log" data-id="${t.id}" data-log="${l.id}" aria-label="Smazat záznam ${esc(l.type)}" title="Smazat">×</button></li>`).join('')}</ul>`
+        : '<div class="blank"><strong>Deník je zatím čistý.</strong><span>Zapisujte přesazení, drátování nebo střih. Splněné úkoly se sem zapisují samy.</span></div>'}</section>
     </div>
-    <section><div class="sec-head"><h2>Fotky a vývoj</h2><label class="btn small">+ Přidat fotky<input type="file" id="photo-input" accept="image/*" multiple hidden data-change="add-photos" data-id="${t.id}"></label></div>
-      ${photos.length ? `<div class="gallery">${photos.map(p => `<button class="shot" data-act="open-photo" data-id="${t.id}" data-photo="${p.id}"><img src="${p.data}" alt="${esc(p.caption || t.name)}" loading="lazy"><span class="cap">${fmtDate(p.date)}${p.caption ? ' · ' + esc(p.caption) : ''}</span></button>`).join('')}</div>`
-      : '<p class="empty">Bez fotek. Foťte strom pravidelně ze stejného úhlu, za pár let uvidíte vývoj.</p>'}</section>`;
+    <section><div class="sec-head"><h2>Fotografie</h2><button class="btn small" data-act="pick-photos"><span class="plus">+</span> Přidat fotografie</button>
+      <input type="file" id="photo-input" accept="image/*" multiple hidden data-change="add-photos" data-id="${t.id}"></div>
+      ${photos.length ? `<div class="shots">${photos.map(p => `<button class="shot" data-act="open-photo" data-id="${t.id}" data-photo="${p.id}" aria-label="Otevřít fotografii z ${fmtDate(p.date)}"><span class="plate">${pic(t, p)}</span><span class="cap">${fmtDate(p.date)}${p.caption ? ' · ' + esc(p.caption) : ''}</span></button>`).join('')}</div>`
+      : '<div class="blank"><strong>Zatím bez fotografie.</strong><span>Foťte strom ve stejném světle a ze stejného úhlu, nejlépe proti klidnému pozadí. Za pár let uvidíte jeho vývoj.</span></div>'}</section>`;
 }
 
+function contours() {
+  let out = '';
+  for (const [cx, cy, c] of [[170, 150, 1], [470, 210, 2.200], [690, 70, 4]]) for (let k = 1; k <= 8; k++) {
+    let d = '';
+    for (let i = 0; i <= 48; i++) { const a = i / 48 * Math.PI * 2, r = k * 27 * (1 + .13 * Math.sin(3 * a + c + k * .3) + .08 * Math.cos(5 * a + c * 2));
+      d += `${i ? 'L' : 'M'}${(cx + Math.cos(a) * r * 1.250).toFixed(1)} ${(cy + Math.sin(a) * r).toFixed(1)}`; }
+    out += `<path d="${d}Z" stroke-width="${k % 4 === 0 ? 1.600 : .8}"/>`;
+  }
+  const mark = (x, y) => `<g transform="translate(${x} ${y})"><circle r="9" fill="var(--paper)" stroke="var(--clay)" stroke-width="1.500"/><path d="M-4 0h8M0-4v8" stroke="var(--clay)" stroke-width="1.500"/></g>`;
+  return `<svg viewBox="0 0 800 340" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="var(--rule)">${out}</g>
+    <path d="M40 300C180 250 260 300 380 240S560 150 760 170" fill="none" stroke="var(--ink-2)" stroke-width="1.200" stroke-dasharray="1 7" stroke-linecap="round"/>${mark(205, 128)}${mark(486, 196)}${mark(640, 96)}</svg>`;
+}
 function viewYamadori() {
-  return `<header class="page-head"><div><span class="dev-badge">Ve vývoji</span><h1>Yamadori</h1>
-      <p class="summary">Mapa míst, kde na vás v přírodě čekají vyhlédnuté stromy. Tato sekce se teprve připravuje, níže je plán.</p></div></header>
-    <div class="yama">
-      <div class="mapmock"><span class="veil">Náhled, mapa zatím není funkční</span>
-        <svg viewBox="0 0 600 380" role="img" aria-label="Ilustrační náhled mapy s vyznačenými body">
-          <g fill="none" stroke="var(--line)" stroke-width="1.500">
-            <path d="M-20 300C80 240 150 330 260 280S430 200 620 250"/><path d="M-20 250C90 190 170 280 270 230S440 150 620 200"/>
-            <path d="M-20 200C100 140 190 230 280 180S450 100 620 150"/><path d="M-20 150C110 90 210 180 290 130S460 50 620 100"/>
-            <path d="M-20 100C120 40 230 130 300 80S470 0 620 50"/><ellipse cx="420" cy="120" rx="70" ry="38"/><ellipse cx="420" cy="120" rx="40" ry="20"/>
-          </g>
-          <path d="M-10 340C120 320 200 360 330 330S500 300 610 320" fill="none" stroke="var(--muted)" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>
-          <g fill="var(--accent)" stroke="var(--raised)" stroke-width="2">
-            <path d="M150 190c0-14 22-14 22 0 0 9-11 20-11 20s-11-11-11-20z"/><path d="M409 105c0-14 22-14 22 0 0 9-11 20-11 20s-11-11-11-20z"/>
-          </g>
-          <path d="M290 262c0-14 22-14 22 0 0 9-11 20-11 20s-11-11-11-20z" fill="var(--warn)" stroke="var(--raised)" stroke-width="2"/>
-        </svg></div>
-      <section class="panel"><h2>Co tu bude</h2>
-        <ul class="plan"><li>Mapa (Mapy.cz nebo Google Maps) s body, kde jste našli yamadori.</li><li>Přidání bodu kliknutím do mapy nebo z aktuální polohy v terénu.</li>
-          <li>Ke každému bodu fotky, druh a základní informace o stromu.</li><li>Upravitelné poznámky: plán vyzvednutí, povolení vlastníka, příprava kořenů.</li>
-          <li>Po vyzvednutí převod bodu jedním klikem na kartu stromu ve sbírce.</li></ul></section>
-    </div>
-    <section><div class="sec-head"><h2>Jak bude vypadat záznam</h2><span class="muted">ukázka</span></div>
-      <div class="panel spot"><div class="row"><h3>Borovice na skalní hraně</h3><span class="chip species">Borovice lesní</span><span class="chip">Vyhlédnuto</span></div>
-        <p class="muted">49.5632 N, 15.9412 E · nalezeno 14. 9. 2026</p>
-        <p>Kmen asi 8 cm, výrazný pohyb. Na jaře 2027 podkopat kořeny z jedné strany, vyzvednutí plánuji na jaro 2028. Domluvit souhlas vlastníka pozemku.</p></div></section>`;
+  const finds = [
+    ['Borovice na skalní hraně', 'Borovice lesní', '49.5632 N · 15.9412 E', 'Kmen asi 8 cm, výrazný pohyb. Na jaře podkopat kořeny z jedné strany.', 'jaro 2028'],
+    ['Habr u staré meze', 'Habr obecný', '49.7108 N · 16.2650 E', 'Okousaný zvěří, hustý spodek. Domluvit souhlas vlastníka pozemku.', 'březen 2027'],
+    ['Modřín v lomu', 'Modřín opadavý', '50.0871 N · 17.1933 E', 'Roste v puklině, kořeny mělko. Ověřit, jestli půjde vyjmout s balem.', 'zatím neurčeno'],
+  ];
+  return `<header class="page-head"><div><p class="eyebrow">Terénní zápisník</p><h1>Yamadori</h1></div><span class="stamp">ve vývoji</span></header>
+    <div class="field-map">${contours()}<div class="msg"><h2>Mapa je ve vývoji</h2>
+      <p>Tady bude mapa vašich soukromých bodů nálezů: stromy vyhlédnuté v přírodě, které čekají na vyzvednutí. Body uvidíte jen vy.</p></div></div>
+    <section><div class="sec-head"><h2>Jak bude vypadat zápis nálezu</h2><span class="side">ukázka, ne vaše data</span></div>
+      <div class="finds">${finds.map(([name, sp, co, note, pick], i) => `<article class="find"><span class="plate">${illustration({ id: 'yama' + i, name, species: sp })}</span>
+        <div><p class="eyebrow">${sp}</p><h3>${name}</h3></div><p class="coord">${co}</p><p class="hand">${note}</p>
+        <div class="pick"><span>Vyzvednutí</span><span>${pick}</span></div></article>`).join('')}</div></section>
+    <section><div class="sec-head"><h2>Co se chystá</h2></div>
+      <ol class="plan-list"><li>Mapa (Mapy.cz nebo Google Maps) s body nálezů, které přidáte kliknutím nebo z aktuální polohy v terénu.</li>
+        <li>U každého bodu fotografie, druh stromu a upravitelné poznámky.</li><li>Termín vyzvednutí, který se propíše mezi úkoly v diáři.</li>
+        <li>Po vyzvednutí převod bodu na stránku stromu ve sbírce.</li></ol></section>`;
 }
 
 /* ---------- Dialogy ---------- */
@@ -312,44 +336,50 @@ function openDialog(html, { wide = false, onSubmit } = {}) {
 }
 function closeDialog() { const d = dlg(); if (d.open) d.close(); d.innerHTML = ''; }
 const head = title => `<div class="dlg-head"><h2>${title}</h2><button type="button" class="icon-btn" data-act="close" aria-label="Zavřít">×</button></div>`;
-function confirmBox(text, yesLabel, onYes) {
-  openDialog(`<form class="dlg" method="dialog">${head('Opravdu?')}<p>${text}</p><div class="dlg-foot"><button type="button" class="btn" data-act="close">Zrušit</button><button class="btn primary">${yesLabel}</button></div></form>`,
+function confirmBox(title, text, yesLabel, onYes) {
+  openDialog(`<form class="dlg" novalidate>${head(title)}<p>${text}</p><div class="dlg-foot"><button type="button" class="btn quiet" data-act="close">Ponechat</button><button class="btn primary">${yesLabel}</button></div></form>`,
     { onSubmit: () => { closeDialog(); onYes(); } });
 }
 let toastTimer;
-function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2200); }
+function toast(msg, bad) { const el = $('#toast'); el.textContent = msg; el.className = bad ? 'bad' : ''; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 4500 : 2200); }
 const opts = (list, sel) => list.map(x => `<option ${x === sel ? 'selected' : ''}>${esc(x)}</option>`).join('');
+const F = (id, label, control) => `<div class="field"><label for="${id}">${label}</label>${control}<p class="err" id="e-${id}" role="alert" hidden></p></div>`;
+function fail(id, msg) { const el = $('#' + id), e = $('#e-' + id); el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', 'e-' + id); e.textContent = msg; e.hidden = false; el.focus(); }
+function clearErr(el) { if (el.getAttribute('aria-invalid')) { el.removeAttribute('aria-invalid'); const e = $('#e-' + el.id); if (e) e.hidden = true; } }
 
 function taskDialog(task, presetTree) {
   const t = task || { title: '', due: '', scope: presetTree ? { type: 'tree', value: presetTree } : { type: 'general' }, note: '' };
   const prec = task ? (!t.due ? 'none' : t.due.length === 7 ? 'month' : 'day') : (presetTree ? 'month' : 'day');
   const n = today(), [my, mm] = t.due && t.due.length === 7 ? t.due.split('-').map(Number) : [n.getFullYear(), n.getMonth() + 1];
   const sp = speciesInUse(), noTrees = !state.trees.length;
-  openDialog(`<form class="dlg">${head(task ? 'Upravit úkol' : 'Nový úkol')}
-    <label class="field"><span>Co je potřeba udělat</span><input type="text" id="tk-title" required maxlength="120" list="tk-hints" value="${esc(t.title)}" placeholder="např. Přesadit" autocomplete="off"></label>
+  openDialog(`<form class="dlg" novalidate>${head(task ? 'Upravit úkol' : 'Nový úkol')}
+    ${F('tk-title', 'Co je potřeba udělat', `<input type="text" id="tk-title" maxlength="120" list="tk-hints" value="${esc(t.title)}" placeholder="např. Přesadit" autocomplete="off">`)}
     <datalist id="tk-hints">${TASK_HINTS.map(h => `<option value="${h}">`).join('')}</datalist>
-    <fieldset><legend>Termín</legend><div class="seg">
+    <fieldset class="field"><legend>Termín</legend><div class="stack"><div class="seg">
       <label><input type="radio" name="prec" id="tk-prec-day" value="day" ${prec === 'day' ? 'checked' : ''}>Konkrétní den</label>
-      <label><input type="radio" name="prec" id="tk-prec-month" value="month" ${prec === 'month' ? 'checked' : ''}>Jen měsíc</label>
+      <label><input type="radio" name="prec" id="tk-prec-month" value="month" ${prec === 'month' ? 'checked' : ''}>Celý měsíc</label>
       <label><input type="radio" name="prec" id="tk-prec-none" value="none" ${prec === 'none' ? 'checked' : ''}>Bez termínu</label></div>
-      <input type="date" id="tk-date" aria-label="Datum" value="${t.due.length === 10 ? t.due : iso(n)}" ${prec === 'day' ? '' : 'hidden'}>
+      <input type="date" id="tk-date" aria-label="Datum" value="${t.due.length === 10 ? t.due : iso(n)}" ${prec === 'day' ? '' : 'hidden'}><p class="err" id="e-tk-date" role="alert" hidden></p>
       <div class="row2" id="tk-monthrow" ${prec === 'month' ? '' : 'hidden'}><select id="tk-month" aria-label="Měsíc">${MONTHS.map((m, i) => `<option value="${i + 1}" ${i + 1 === mm ? 'selected' : ''}>${m}</option>`).join('')}</select>
-        <input type="number" id="tk-year" aria-label="Rok" min="2000" max="2100" value="${my}"></div></fieldset>
-    <fieldset><legend>Štítek: čeho se úkol týká</legend>
-      <select id="tk-scope" aria-label="Štítek"><option value="general" ${t.scope.type === 'general' ? 'selected' : ''}>Obecný úkol</option>
+        <input type="number" id="tk-year" aria-label="Rok" inputmode="numeric" value="${my}"></div><p class="err" id="e-tk-year" role="alert" hidden></p></div></fieldset>
+    <fieldset class="field"><legend>Štítek: čeho se úkol týká</legend><div class="stack">
+      <select id="tk-scope" aria-label="Typ štítku"><option value="general" ${t.scope.type === 'general' ? 'selected' : ''}>Obecný úkol</option>
         <option value="tree" ${t.scope.type === 'tree' ? 'selected' : ''} ${noTrees ? 'disabled' : ''}>Konkrétní strom</option>
         <option value="species" ${t.scope.type === 'species' ? 'selected' : ''} ${noTrees ? 'disabled' : ''}>Všechny stromy jednoho druhu</option></select>
       <select id="tk-tree" aria-label="Strom" ${t.scope.type === 'tree' ? '' : 'hidden'}>${state.trees.map(x => `<option value="${x.id}" ${x.id === t.scope.value ? 'selected' : ''}>${esc(x.name)} (${esc(x.species)})</option>`).join('')}</select>
-      <select id="tk-species" aria-label="Druh" ${t.scope.type === 'species' ? '' : 'hidden'}>${opts(sp, t.scope.value)}</select></fieldset>
-    <label class="field"><span>Poznámka (nepovinná)</span><input type="text" id="tk-note" maxlength="200" value="${esc(t.note)}"></label>
-    <div class="dlg-foot">${task ? `<button type="button" class="btn danger left" data-act="del-task" data-id="${task.id}">Smazat</button>` : ''}
-      <button type="button" class="btn" data-act="close">Zrušit</button><button class="btn primary">${task ? 'Uložit' : 'Přidat úkol'}</button></div></form>`, {
+      <select id="tk-species" aria-label="Druh" ${t.scope.type === 'species' ? '' : 'hidden'}>${opts(sp, t.scope.value)}</select>
+      ${noTrees ? '<p class="help">Štítek stromu nebo druhu půjde zvolit, jakmile bude ve sbírce první strom.</p>' : ''}</div></fieldset>
+    ${F('tk-note', 'Poznámka (nepovinná)', `<input type="text" id="tk-note" maxlength="200" value="${esc(t.note)}">`)}
+    <div class="dlg-foot">${task ? `<button type="button" class="btn danger left" data-act="del-task" data-id="${task.id}">Smazat úkol</button>` : ''}
+      <button type="button" class="btn quiet" data-act="close">Zrušit</button><button class="btn primary">${task ? 'Uložit úkol' : 'Přidat úkol'}</button></div></form>`, {
     onSubmit() {
-      const p = $('input[name="prec"]:checked', dlg()).value, sc = $('#tk-scope').value;
-      const due = p === 'day' ? $('#tk-date').value : p === 'month' ? `${$('#tk-year').value}-${pad($('#tk-month').value)}` : '';
-      const data = { title: $('#tk-title').value.trim(), due, note: $('#tk-note').value.trim(),
+      const p = $('input[name="prec"]:checked', dlg()).value, sc = $('#tk-scope').value, title = $('#tk-title').value.trim(), yr = Number($('#tk-year').value);
+      if (!title) return fail('tk-title', 'Napište, co je potřeba udělat.');
+      if (p === 'day' && !$('#tk-date').value) return fail('tk-date', 'Vyberte den, nebo zvolte termín na celý měsíc.');
+      if (p === 'month' && !(yr >= 2000 && yr <= 2100)) return fail('tk-year', 'Zadejte rok mezi 2000 a 2100.');
+      const due = p === 'day' ? $('#tk-date').value : p === 'month' ? `${yr}-${pad($('#tk-month').value)}` : '';
+      const data = { title, due, note: $('#tk-note').value.trim(),
         scope: sc === 'tree' ? { type: 'tree', value: $('#tk-tree').value } : sc === 'species' ? { type: 'species', value: $('#tk-species').value } : { type: 'general' } };
-      if (!data.title) return;
       if (task) Object.assign(task, data); else state.tasks.push({ id: uid(), done: false, doneAt: null, logId: null, ...data });
       closeDialog(); commit(task ? 'Úkol uložen' : 'Úkol přidán');
     },
@@ -358,77 +388,92 @@ function taskDialog(task, presetTree) {
 
 function treeDialog(t) {
   const v = t || { name: '', species: '', style: '', acquired: '', origin: '', pot: '', notes: '' };
-  openDialog(`<form class="dlg">${head(t ? 'Upravit strom' : 'Nový strom')}
-    <div class="row2"><label class="field"><span>Název</span><input type="text" id="tr-name" required maxlength="60" value="${esc(v.name)}" placeholder="např. Borovice č. 2" autocomplete="off"></label>
-      <label class="field"><span>Druh</span><input type="text" id="tr-species" required maxlength="60" list="tr-species-list" value="${esc(v.species)}" placeholder="např. Borovice lesní" autocomplete="off"></label></div>
+  const tx = (id, label, val, extra = '') => F('tr-' + id, label, `<input type="text" id="tr-${id}" maxlength="80" value="${esc(val)}" autocomplete="off" ${extra}>`);
+  openDialog(`<form class="dlg" novalidate>${head(t ? 'Upravit strom' : 'Nový strom')}
+    <div class="row2">${tx('name', 'Název', v.name, 'placeholder="např. Borovice č. 2"')}${tx('species', 'Druh', v.species, 'list="tr-species-list" placeholder="např. Borovice lesní"')}</div>
     <datalist id="tr-species-list">${[...new Set([...speciesInUse(), ...SPECIES])].map(s => `<option value="${esc(s)}">`).join('')}</datalist>
-    <div class="row2"><label class="field"><span>Styl</span><input type="text" id="tr-style" maxlength="60" list="tr-style-list" value="${esc(v.style)}" autocomplete="off"></label>
-      <label class="field"><span>Ve sbírce od roku</span><input type="number" id="tr-acquired" min="1900" max="2100" value="${esc(v.acquired)}"></label></div>
+    <div class="row2">${tx('style', 'Styl', v.style, 'list="tr-style-list"')}${F('tr-acquired', 'Ve sbírce od roku', `<input type="number" id="tr-acquired" inputmode="numeric" value="${esc(v.acquired)}">`)}</div>
     <datalist id="tr-style-list">${STYLES.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
-    <div class="row2"><label class="field"><span>Původ</span><input type="text" id="tr-origin" maxlength="80" value="${esc(v.origin)}" placeholder="yamadori, školka, semenáč…"></label>
-      <label class="field"><span>Miska</span><input type="text" id="tr-pot" maxlength="80" value="${esc(v.pot)}"></label></div>
-    <label class="field"><span>Poznámky</span><textarea id="tr-notes" maxlength="2000">${esc(v.notes)}</textarea></label>
-    <div class="dlg-foot"><button type="button" class="btn" data-act="close">Zrušit</button><button class="btn primary">${t ? 'Uložit' : 'Přidat strom'}</button></div></form>`, {
-    onSubmit() {
+    <div class="row2">${tx('origin', 'Původ', v.origin, 'placeholder="yamadori, školka, semenáč"')}${tx('pot', 'Miska', v.pot)}</div>
+    ${t ? '' : F('tr-photo', 'Fotografie (nepovinná)', '<input type="file" id="tr-photo" accept="image/*">')}
+    ${F('tr-notes', 'Pěstitelské poznámky', `<textarea id="tr-notes" maxlength="2000">${esc(v.notes)}</textarea>`)}
+    <div class="dlg-foot"><button type="button" class="btn quiet" data-act="close">Zrušit</button><button class="btn primary">${t ? 'Uložit strom' : 'Přidat strom'}</button></div></form>`, {
+    async onSubmit() {
       const g = id => $('#tr-' + id).value.trim(), old = t && t.species;
       const data = { name: g('name'), species: g('species'), style: g('style'), acquired: g('acquired'), origin: g('origin'), pot: g('pot'), notes: g('notes') };
-      if (!data.name) return;
-      closeDialog();
-      if (t) { Object.assign(t, data); if (old !== data.species) illuCache.delete(t.id + '|' + old); commit('Uloženo'); }
-      else { const nt = { id: uid(), photos: [], log: [], coverId: null, ...data }; state.trees.push(nt); store.save(); toast('Strom přidán'); location.hash = 'strom-' + nt.id; }
+      if (!data.name) return fail('tr-name', 'Dejte stromu název, podle kterého ho poznáte.');
+      if (!data.species) return fail('tr-species', 'Doplňte druh. Podle něj fungují druhové štítky úkolů.');
+      if (data.acquired && !(data.acquired >= 1900 && data.acquired <= 2100)) return fail('tr-acquired', 'Zadejte rok mezi 1900 a 2100, nebo pole nechte prázdné.');
+      if (t) { closeDialog(); Object.assign(t, data); if (old !== data.species) illuCache.delete(t.id + '|' + old); return commit('Strom uložen'); }
+      const nt = { id: uid(), photos: [], log: [], coverId: null, ...data }, file = $('#tr-photo').files[0];
+      if (file) {
+        try { nt.photos.push({ id: uid(), data: await fileToDataURL(file), date: iso(new Date(file.lastModified || Date.now())), caption: '' }); }
+        catch (e) { return fail('tr-photo', 'Soubor se nepodařilo načíst jako obrázek. Zkuste JPG nebo PNG.'); }
+      }
+      closeDialog(); state.trees.push(nt); store.save(); toast('Strom přidán do sbírky'); location.hash = 'strom-' + nt.id;
     },
   });
 }
 
 function logDialog(t) {
-  openDialog(`<form class="dlg">${head('Záznam do deníku')}
-    <div class="row2"><label class="field"><span>Co se dělalo</span><select id="lg-type">${opts(LOG_TYPES)}</select></label>
-      <label class="field"><span>Kdy</span><input type="date" id="lg-date" required value="${iso(today())}"></label></div>
-    <label class="field"><span>Poznámka (nepovinná)</span><input type="text" id="lg-note" maxlength="200" placeholder="např. složení substrátu"></label>
-    <div class="dlg-foot"><button type="button" class="btn" data-act="close">Zrušit</button><button class="btn primary">Zapsat</button></div></form>`, {
-    onSubmit() { t.log.push({ id: uid(), type: $('#lg-type').value, date: $('#lg-date').value, note: $('#lg-note').value.trim() }); closeDialog(); commit('Zapsáno'); },
+  openDialog(`<form class="dlg" novalidate>${head('Záznam do deníku')}
+    <div class="row2">${F('lg-type', 'Co se dělalo', `<select id="lg-type">${opts(LOG_TYPES)}</select>`)}${F('lg-date', 'Kdy', `<input type="date" id="lg-date" value="${iso(today())}">`)}</div>
+    ${F('lg-note', 'Poznámka (nepovinná)', '<input type="text" id="lg-note" maxlength="200" placeholder="např. složení substrátu">')}
+    <div class="dlg-foot"><button type="button" class="btn quiet" data-act="close">Zrušit</button><button class="btn primary">Zapsat do deníku</button></div></form>`, {
+    onSubmit() {
+      if (!$('#lg-date').value) return fail('lg-date', 'Vyberte den, kdy jste na stromě pracovali.');
+      t.log.push({ id: uid(), type: $('#lg-type').value, date: $('#lg-date').value, note: $('#lg-note').value.trim() }); closeDialog(); commit('Zapsáno do deníku');
+    },
   });
 }
 
 function photoDialog(t, p) {
-  openDialog(`<form class="dlg light">${head(esc(t.name))}<img src="${p.data}" alt="${esc(p.caption || t.name)}">
-    <div class="row2"><label class="field"><span>Popisek</span><input type="text" id="ph-caption" maxlength="80" value="${esc(p.caption)}" placeholder="např. po jarním střihu"></label>
-      <label class="field"><span>Datum pořízení</span><input type="date" id="ph-date" required value="${p.date}"></label></div>
-    <div class="dlg-foot"><button type="button" class="btn danger left" data-act="del-photo" data-id="${t.id}" data-photo="${p.id}">Smazat</button>
-      <button type="button" class="btn" data-act="set-cover" data-id="${t.id}" data-photo="${p.id}">Nastavit jako titulní</button><button class="btn primary">Uložit</button></div></form>`, {
-    wide: true, onSubmit() { p.caption = $('#ph-caption').value.trim(); p.date = $('#ph-date').value; closeDialog(); commit('Uloženo'); },
+  const fo = p.focus || 'center';
+  openDialog(`<form class="dlg light" novalidate>${head(esc(t.name))}<img src="${p.data}" alt="${esc(p.caption || t.name)}">
+    <div class="row2">${F('ph-caption', 'Popisek', `<input type="text" id="ph-caption" maxlength="80" value="${esc(p.caption)}" placeholder="např. po jarním střihu">`)}
+      ${F('ph-date', 'Datum pořízení', `<input type="date" id="ph-date" value="${p.date}">`)}</div>
+    ${F('ph-focus', 'Výřez v katalogu', `<select id="ph-focus"><option value="top" ${fo === 'top' ? 'selected' : ''}>Koruna (horní část snímku)</option><option value="center" ${fo === 'center' ? 'selected' : ''}>Střed snímku</option><option value="bottom" ${fo === 'bottom' ? 'selected' : ''}>Miska a pata kmene (spodní část)</option></select>`)}
+    <div class="dlg-foot"><button type="button" class="btn danger left" data-act="del-photo" data-id="${t.id}" data-photo="${p.id}">Smazat fotografii</button>
+      <button type="button" class="btn quiet" data-act="set-cover" data-id="${t.id}" data-photo="${p.id}">Nastavit jako titulní</button><button class="btn primary">Uložit</button></div></form>`, {
+    wide: true, onSubmit() {
+      if (!$('#ph-date').value) return fail('ph-date', 'Doplňte datum pořízení, fotografie se podle něj řadí.');
+      p.caption = $('#ph-caption').value.trim(); p.date = $('#ph-date').value; p.focus = $('#ph-focus').value; closeDialog(); commit('Fotografie uložena');
+    },
   });
 }
 
 function settingsDialog() {
   openDialog(`<div class="dlg">${head('Záloha a data')}
-    <p class="muted">Všechna data jsou uložena jen v tomto prohlížeči. Zálohu si stahujte pravidelně, hlavně před výměnou telefonu nebo počítače.</p>
-    <div class="btns"><button class="btn" data-act="export">Stáhnout zálohu (JSON)</button>
-      <label class="btn">Obnovit ze zálohy<input type="file" id="import-input" accept="application/json,.json" hidden data-change="import"></label></div>
-    <div class="btns"><button class="btn danger" data-act="wipe">Smazat všechna data</button><button class="btn" data-act="load-demo">Načíst ukázková data</button></div></div>`);
+    <p class="help">Deník je uložený jen v tomto prohlížeči. Zálohu si stahujte pravidelně, hlavně před výměnou telefonu nebo počítače.</p>
+    <div class="btns"><button class="btn" data-act="export">Stáhnout zálohu</button><button class="btn" data-act="pick-import">Obnovit ze zálohy</button>
+      <input type="file" id="import-input" accept="application/json,.json" hidden data-change="import"></div>
+    <div class="btns" style="border-top:1px solid var(--rule);padding-top:18px"><button class="btn quiet" data-act="load-demo">Načíst ukázková data</button><button class="btn danger" data-act="wipe">Smazat všechna data</button></div></div>`);
 }
 
 async function fileToDataURL(file) {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image(); img.src = url; await img.decode();
-    const k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', .82);
+    return c.toDataURL('image/jpeg', .84);
   } finally { URL.revokeObjectURL(url); }
 }
 
 /* ---------- Akce ---------- */
 const actions = {
   close: closeDialog,
+  'pick-photos': () => $('#photo-input').click(),
+  'pick-import': () => $('#import-input').click(),
+  'reset-filter': () => { filter = { q: '', species: '' }; render(); },
   settings: settingsDialog,
   'new-task': el => taskDialog(null, el.dataset.tree),
   'edit-task': el => taskDialog(state.tasks.find(t => t.id === el.dataset.id)),
   'del-task': el => { state.tasks = state.tasks.filter(t => t.id !== el.dataset.id); closeDialog(); commit('Úkol smazán'); },
   'new-tree': () => treeDialog(),
   'edit-tree': el => treeDialog(tree(el.dataset.id)),
-  'del-tree': el => { const t = tree(el.dataset.id); confirmBox(`Smazat strom „${esc(t.name)}“ včetně fotek, deníku a jeho úkolů? Tento krok nejde vrátit.`, 'Smazat strom', () => {
+  'del-tree': el => { const t = tree(el.dataset.id); confirmBox('Smazat strom?', `Strom „${esc(t.name)}“ zmizí ze sbírky i s fotografiemi, deníkem a svými úkoly. Tento krok nejde vrátit.`, 'Smazat strom', () => {
     state.trees = state.trees.filter(x => x.id !== t.id); state.tasks = state.tasks.filter(x => !(x.scope.type === 'tree' && x.scope.value === t.id));
     store.save(); toast('Strom smazán'); location.hash = 'sbirka'; }); },
   'new-log': el => logDialog(tree(el.dataset.id)),
@@ -436,9 +481,9 @@ const actions = {
   'open-photo': el => { const t = tree(el.dataset.id); photoDialog(t, t.photos.find(p => p.id === el.dataset.photo)); },
   'del-photo': el => { const t = tree(el.dataset.id); t.photos = t.photos.filter(p => p.id !== el.dataset.photo); if (t.coverId === el.dataset.photo) t.coverId = null; closeDialog(); commit('Fotka smazána'); },
   'set-cover': el => { tree(el.dataset.id).coverId = el.dataset.photo; closeDialog(); commit('Titulní fotka nastavena'); },
-  'clear-demo': () => confirmBox('Smazat ukázkové stromy a úkoly a začít s prázdnou aplikací?', 'Smazat ukázku', () => { state = { trees: [], tasks: [], demo: false }; commit('Ukázka smazána'); }),
-  wipe: () => confirmBox('Smazat všechny stromy, fotky a úkoly? Tento krok nejde vrátit.', 'Smazat vše', () => { state = { trees: [], tasks: [], demo: false }; commit('Data smazána'); }),
-  'load-demo': () => confirmBox('Nahradit současná data ukázkovými?', 'Načíst ukázku', () => { state = demoState(); commit('Ukázková data načtena'); }),
+  'clear-demo': () => confirmBox('Smazat ukázku?', 'Ukázkové stromy a úkoly zmizí a deník bude prázdný, připravený na vaši sbírku.', 'Smazat ukázku', () => { state = { trees: [], tasks: [], demo: false }; commit('Ukázka smazána'); }),
+  wipe: () => confirmBox('Smazat všechna data?', 'Zmizí všechny stromy, fotografie i úkoly. Tento krok nejde vrátit, proto si nejdřív stáhněte zálohu.', 'Smazat vše', () => { state = { trees: [], tasks: [], demo: false }; commit('Data smazána'); }),
+  'load-demo': () => confirmBox('Načíst ukázku?', 'Současný obsah deníku se nahradí ukázkovými stromy a úkoly.', 'Načíst ukázku', () => { state = demoState(); commit('Ukázková data načtena'); }),
   export: () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(state)], { type: 'application/json' }));
@@ -458,16 +503,16 @@ const changes = {
   'filter-species': el => { filter.species = el.value; render(); },
   'add-photos': async el => {
     const t = tree(el.dataset.id), files = [...el.files]; if (!files.length) return;
-    toast('Zpracovávám fotky…'); let ok = 0;
+    toast('Zpracovávám fotografie…'); let ok = 0;
     for (const f of files) { try { t.photos.push({ id: uid(), data: await fileToDataURL(f), date: iso(new Date(f.lastModified || Date.now())), caption: '' }); ok++; } catch (e) { /* nečitelný soubor přeskočíme */ } }
-    commit(ok ? `Přidáno: ${ok} ${plural(ok, 'fotka', 'fotky', 'fotek')}` : 'Soubor se nepodařilo načíst jako obrázek');
+    store.save(); render(); ok ? toast(`Přidáno: ${ok} ${plural(ok, 'fotografie', 'fotografie', 'fotografií')}`) : toast('Soubor se nepodařilo načíst jako obrázek. Zkuste JPG nebo PNG.', true);
   },
   import: async el => {
     try {
       const data = JSON.parse(await el.files[0].text());
       if (!Array.isArray(data.trees) || !Array.isArray(data.tasks)) throw new Error('format');
       state = { trees: data.trees, tasks: data.tasks, demo: !!data.demo }; closeDialog(); commit('Záloha obnovena');
-    } catch (e) { toast('Soubor není platná záloha Bonsai APP'); }
+    } catch (e) { toast('Tento soubor není záloha Bonsai deníku. Vyberte soubor bonsai-zaloha….json.', true); }
   },
 };
 
@@ -478,10 +523,8 @@ document.addEventListener('change', e => {
   if (e.target.id === 'tk-scope') { $('#tk-tree').hidden = e.target.value !== 'tree'; $('#tk-species').hidden = e.target.value !== 'species'; }
 });
 document.addEventListener('input', e => {
-  if (e.target.dataset.input === 'filter-q') {
-    filter.q = e.target.value; const q = filter.q.toLowerCase();
-    $('#cards').innerHTML = cardsHtml(state.trees.filter(t => (!filter.species || t.species === filter.species) && (!q || (t.name + ' ' + t.species).toLowerCase().includes(q))));
-  }
+  clearErr(e.target);
+  if (e.target.dataset.input === 'filter-q') { filter.q = e.target.value; $('#cards').innerHTML = catalogHtml(); }
 });
 document.addEventListener('submit', e => { e.preventDefault(); const d = dlg(); if (d.contains(e.target) && d._submit) d._submit(); });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
