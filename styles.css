@@ -355,3 +355,22 @@ input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px;
   .frame { padding: 16px 14px 8px; }
   .dash .lead-text > div { width: 100%; }
 }
+
+/* Levé menu: větší položky s ikonou, zvolená stránka má podklad, pruh a tučné písmo */
+.links a svg { display: none; }
+@media (min-width: 761px) {
+  #app { grid-template-columns: 244px minmax(0, 1fr); }
+  .top { background: var(--card); }
+  .top-in { padding: 26px 14px 22px max(14px, env(safe-area-inset-left, 0px)); gap: 30px; align-items: stretch; }
+  .brand { padding: 0 12px; font-size: 1.5rem; gap: 12px; }
+  .brand .seal { width: 32px; height: 32px; }
+  .links { gap: 4px; align-items: stretch; }
+  .links a { gap: 12px; padding: 12px 12px; border: 0; border-radius: 4px; font-size: 1rem; font-weight: 500; color: var(--ink-2); }
+  .links a svg { display: block; width: 22px; height: 22px; flex: none; }
+  .links a:hover { background: var(--paper-2); color: var(--ink); }
+  .links a[aria-current="page"] { background: var(--moss-wash); color: var(--ink); font-weight: 600; box-shadow: inset 4px 0 0 var(--moss); }
+  .links a[aria-current="page"] svg { color: var(--moss); }
+  .links .soon-tag { margin-left: auto; white-space: nowrap; }
+  .util-wrap { padding: 14px 12px 0; border-top: 1px solid var(--rule); }
+  .top .util { font-size: .92rem; }
+}

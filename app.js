@@ -227,7 +227,7 @@ function render() {
   const link = (v, label, extra = '') => `<a href="#${v}" ${cur(v)}>${label}${extra}</a>`;
   $('#app').innerHTML = `<header class="top"><div class="top-in gut">
       <a class="brand" href="#prehled" aria-label="Bonsai deník, přehled">${SEAL}${r.view === 'prehled' ? '' : '<span>Bonsai deník</span>'}</a>
-      <nav class="links" aria-label="Hlavní navigace">${link('prehled', 'Přehled')}${link('sbirka', 'Moje sbírka')}${link('yamadori', 'Yamadori', '<span class="soon-tag">ve vývoji</span>')}</nav>
+      <nav class="links" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('sbirka', ICON.tree + '<span>Moje sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>', '<span class="soon-tag">ve vývoji</span>')}</nav>
       <span class="util-wrap">${cloud.user ? '<button class="sync" id="sync" data-act="retry-sync"></button>' : ''}<button class="util" data-act="settings">${cloud.user ? 'Účet a záloha' : 'Záloha a data'}</button></span></div></header>
     <main class="gut"><div class="wrap ${r.view === 'prehled' ? 'dash' : ''}">${body}</div></main>
     <nav class="tabs" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('sbirka', ICON.tree + '<span>Sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>')}</nav>`;
