@@ -237,14 +237,51 @@ const strips = () => (pendingLocal ? `<div class="note-strip strip-wrap"><span>V
   (store.ok || cloud.user ? '' : '<div class="note-strip warn strip-wrap" role="alert"><span>Tento prohlížeč nepovolil ukládání. Změny vydrží jen do zavření stránky, proto si stáhněte zálohu.</span><button class="btn small quiet" data-act="settings">Záloha a data</button></div>') +
   (state.demo && !cloud.user ? '<div class="note-strip strip-wrap"><span>Deník je předvyplněný ukázkovými stromy a úkoly, abyste viděli, jak vypadá zaplněný.</span><button class="btn small quiet" data-act="clear-demo">Smazat ukázku a začít</button></div>' : '');
 
+/* Sezónní panel: okno čtyř měsíců, které lze šipkami posouvat o měsíc dřív nebo později. */
+let seasonOff = 0, seasonBusy = false;
+const SEASON_MIN = -5, SEASON_MAX = 6;
+function monthHtml(rel) {
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + rel);
+  const m = d.getMonth(), [title, good, bad] = SEASON[m];
+  const label = rel === 0 ? 'právě teď' : rel === -1 ? 'minulý měsíc' : rel === 1 ? 'příští měsíc' : rel > 1 ? `za ${rel} ${rel < 5 ? 'měsíce' : 'měsíců'}` : `před ${-rel} měsíci`;
+  return `<section class="month ${rel === 0 ? 'now' : rel < 0 ? 'past' : ''}" ${rel === 0 ? 'aria-current="true"' : ''}>
+    <p class="eyebrow"><span class="mname">${MONTHS[m]} ${d.getFullYear()}</span><span class="rel">${label}</span></p><h3>${title}</h3>
+    <p class="kind">Vhodné</p><ul class="good">${good.map(x => `<li>${x}</li>`).join('')}</ul>
+    <p class="kind">Nevhodné</p><ul class="bad">${bad.map(x => `<li>${x}</li>`).join('')}</ul></section>`;
+}
+const CHEV = up => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'}"/></svg>`;
 function seasonHtml() {
-  const now = new Date().getMonth(), label = { '-1': 'minulý měsíc', 0: 'právě teď', 1: 'příští měsíc', 2: 'za dva měsíce' };
-  return `<aside class="season" aria-label="Sezónní rádce"><div class="sec-head"><h2>Sezóna</h2><span class="side">co dělat a čemu se vyhnout</span></div>
-    ${[-1, 0, 1, 2].map(off => { const m = (now + off + 12) % 12, [title, good, bad] = SEASON[m];
-      return `<section class="month ${off === 0 ? 'now' : off < 0 ? 'past' : ''}" ${off === 0 ? 'aria-current="true"' : ''}>
-        <p class="eyebrow"><span class="mname">${MONTHS[m]}</span><span class="rel">${label[off]}</span></p><h3>${title}</h3>
-        <p class="kind">Vhodné</p><ul class="good">${good.map(x => `<li>${x}</li>`).join('')}</ul>
-        <p class="kind">Nevhodné</p><ul class="bad">${bad.map(x => `<li>${x}</li>`).join('')}</ul></section>`; }).join('')}</aside>`;
+  return `<aside class="season" aria-label="Sezónní rádce"><div class="sec-head"><h2>Sezóna</h2><span class="side"><button class="btn small quiet" id="season-today" data-act="season-today" ${seasonOff ? '' : 'hidden'}>Zpět na dnešek</button><span id="season-hint" ${seasonOff ? 'hidden' : ''}>co dělat a čemu se vyhnout</span></span></div>
+    <button class="season-arrow" id="season-up" data-act="season-shift" data-dir="-1" aria-label="O měsíc dřív" title="O měsíc dřív" ${seasonOff <= SEASON_MIN ? 'disabled' : ''}>${CHEV(true)}</button>
+    <div class="season-view" id="season-view" aria-live="polite"><div class="season-track" id="season-track">${[-1, 0, 1, 2].map(i => monthHtml(seasonOff + i)).join('')}</div></div>
+    <button class="season-arrow" id="season-down" data-act="season-shift" data-dir="1" aria-label="O měsíc později" title="O měsíc později" ${seasonOff >= SEASON_MAX ? 'disabled' : ''}>${CHEV(false)}</button></aside>`;
+}
+function paintSeasonCtl() {
+  $('#season-up').disabled = seasonOff <= SEASON_MIN; $('#season-down').disabled = seasonOff >= SEASON_MAX;
+  $('#season-today').hidden = !seasonOff; $('#season-hint').hidden = !!seasonOff;
+}
+function seasonShift(dir) {
+  const next = seasonOff + dir, view = $('#season-view'), track = $('#season-track');
+  if (seasonBusy || next < SEASON_MIN || next > SEASON_MAX) return;
+  seasonOff = next; paintSeasonCtl();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { track.innerHTML = [-1, 0, 1, 2].map(i => monthHtml(seasonOff + i)).join(''); return; }
+  seasonBusy = true;
+  const GAP = 12, EASE = '.5s cubic-bezier(.22, .8, .24, 1)';
+  view.style.height = view.offsetHeight + 'px';
+  track.insertAdjacentHTML(dir > 0 ? 'beforeend' : 'afterbegin', monthHtml(seasonOff + (dir > 0 ? 2 : -1)));
+  const kids = track.children, comes = dir > 0 ? kids[kids.length - 1] : kids[0], goes = dir > 0 ? kids[0] : kids[kids.length - 1];
+  const dIn = comes.offsetHeight + GAP, dOut = goes.offsetHeight + GAP;
+  comes.classList.add('entering');
+  if (dir < 0) { track.style.transition = 'none'; track.style.transform = `translateY(${-dIn}px)`; }
+  track.getBoundingClientRect();
+  track.style.transition = 'transform ' + EASE; view.style.transition = 'height ' + EASE;
+  track.style.transform = dir > 0 ? `translateY(${-dOut}px)` : 'translateY(0)';
+  view.style.height = (track.offsetHeight - dOut) + 'px';
+  goes.classList.add('leaving'); comes.classList.remove('entering');
+  setTimeout(() => {
+    goes.remove(); track.style.transition = 'none'; track.style.transform = ''; view.style.transition = ''; view.style.height = '';
+    seasonBusy = false;
+  }, 520);
 }
 function viewDashboard() {
   const n = new Date(), open = state.tasks.filter(t => !t.done), late = open.filter(t => dueInfo(t).cls === 'is-late').length;
@@ -567,6 +604,8 @@ async function fileToDataURL(file) {
 /* ---------- Akce ---------- */
 const actions = {
   close: closeDialog,
+  'season-shift': el => seasonShift(Number(el.dataset.dir)),
+  'season-today': () => { seasonOff = 0; const el = $('.season'); if (el) el.outerHTML = seasonHtml(); },
   'gate-mode': el => { gate = { mode: el.dataset.mode, email: $('#au-email') ? $('#au-email').value.trim() : '', note: '' }; renderGate(); },
   'sign-out': async () => { closeDialog(); await cloud.client.auth.signOut(); },
   'change-pass': () => passwordDialog('Změna hesla'),

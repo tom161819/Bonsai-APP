@@ -374,3 +374,19 @@ input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px;
   .util-wrap { padding: 14px 12px 0; border-top: 1px solid var(--rule); }
   .top .util { font-size: .92rem; }
 }
+
+/* Sezóna: panel u pravého okraje, posun po měsících */
+.wrap.dash { max-width: none; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); }
+.dash-main { max-width: 920px; }
+.dash .season { padding: 20px 14px 10px; }
+.season .sec-head { margin: 0 6px 6px; min-height: 44px; align-items: center; }
+.season-view { overflow: hidden; }
+.season-track { display: flex; flex-direction: column; gap: 12px; will-change: transform; }
+.season .month { margin: 0; transition: opacity .4s ease; }
+.season .month.entering, .season .month.leaving { opacity: 0; }
+.season-arrow { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 40px; margin: 4px 0; border: 0; border-radius: 3px; background: none; color: var(--ink-2); cursor: pointer; }
+.season-arrow:hover:not(:disabled) { background: var(--card); color: var(--ink); }
+.season-arrow:active:not(:disabled) svg { transform: scale(.88); }
+.season-arrow:disabled { opacity: .3; cursor: default; }
+.season-arrow svg { transition: transform .15s; }
+@media (max-width: 1080px) { .wrap.dash { grid-template-columns: minmax(0, 1fr); } .dash-main { max-width: none; } }
