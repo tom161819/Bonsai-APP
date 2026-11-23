@@ -14,6 +14,11 @@ const TASK_HINTS = ['Přesadit', 'Drátovat', 'Odstranit drát', 'Strukturální
 const CATEGORIES = ['Drátování', 'Stříhání', 'Přesazování', 'Hnojení', 'Zálivka', 'Ochrana a postřiky', 'Zimování', 'Yamadori', 'Nákupy a příprava', 'Jiné'];
 const REPEATS = [['', 'Neopakovat'], ['1w', 'Každý týden'], ['2w', 'Každých 14 dní'], ['1m', 'Každý měsíc'], ['3m', 'Každé 3 měsíce'], ['6m', 'Každého půl roku'], ['1y', 'Každý rok']];
 const REPEAT_SHORT = { '1w': 'týdně', '2w': 'po 14 dnech', '1m': 'měsíčně', '3m': 'po 3 měsících', '6m': 'půlročně', '1y': 'ročně' };
+const SEASONS = [['jaro', 'Jaro'], ['leto', 'Léto'], ['podzim', 'Podzim'], ['zima', 'Zima']];
+const SEASON_NAME = Object.fromEntries(SEASONS);
+const seasonFromDate = s => { const m = Number(String(s).slice(5, 7)); return m >= 3 && m <= 5 ? 'jaro' : m >= 6 && m <= 8 ? 'leto' : m >= 9 && m <= 11 ? 'podzim' : 'zima'; };
+const seasonOf = p => p.season || seasonFromDate(p.date);
+const seasonOpts = sel => SEASONS.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
 const LOG_TYPES = ['Přesazení', 'Drátování', 'Odstranění drátu', 'Střih', 'Hnojení', 'Postřik', 'Poznámka'];
 /* Sezónní rádce: [název období, co je vhodné, čemu se vyhnout] pro leden až prosinec. */
 const SEASON = [
@@ -365,11 +370,29 @@ function viewTree(id) {
           <button class="icon-btn" data-act="del-log" data-id="${t.id}" data-log="${l.id}" aria-label="Smazat záznam ${esc(l.type)}" title="Smazat">×</button></li>`).join('')}</ul>`
         : '<div class="blank"><strong>Deník je zatím čistý.</strong><span>Zapisujte přesazení, drátování nebo střih. Splněné úkoly se sem zapisují samy.</span></div>'}</section>
     </div>
-    <section><div class="sec-head"><h2>Fotografie</h2><button class="btn small" data-act="pick-photos"><span class="plus">+</span> Přidat fotografie</button>
-      <input type="file" id="photo-input" accept="image/*" multiple hidden data-change="add-photos" data-id="${t.id}"></div>
-      ${photos.length ? `<div class="shots">${photos.map(p => `<button class="shot" data-act="open-photo" data-id="${t.id}" data-photo="${p.id}" aria-label="Otevřít fotografii z ${fmtDate(p.date)}"><span class="plate">${pic(t, p)}</span><span class="cap">${fmtDate(p.date)}${p.caption ? ' · ' + esc(p.caption) : ''}</span></button>`).join('')}</div>`
-      : '<div class="blank"><strong>Zatím bez fotografie.</strong><span>Foťte strom ve stejném světle a ze stejného úhlu, nejlépe proti klidnému pozadí. Za pár let uvidíte jeho vývoj.</span></div>'}</section>`;
+    ${photosSection(t)}`;
 }
+/* Fotografie na stránce stromu: filtr podle období a režim výběru pro porovnání. */
+let photoUI = { tree: null, season: '', cmp: false, picks: [] };
+const photoList = t => [...t.photos].filter(p => !photoUI.season || seasonOf(p) === photoUI.season).sort((a, b) => b.date.localeCompare(a.date));
+function photosSection(t) {
+  if (photoUI.tree !== t.id) photoUI = { tree: t.id, season: '', cmp: false, picks: [] };
+  const u = photoUI, list = photoList(t), cnt = v => t.photos.filter(p => seasonOf(p) === v).length;
+  const chip = (v, label, n) => `<button class="chipbtn" data-act="ph-filter" data-v="${v}" aria-pressed="${u.season === v}" ${n || !v ? '' : 'disabled'}>${label}<span class="num">${n}</span></button>`;
+  return `<section id="photos-sec"><div class="sec-head"><h2>Fotografie</h2><span class="btns">
+      ${t.photos.length > 1 ? `<button class="btn small ${u.cmp ? 'on' : ''}" data-act="cmp-toggle" aria-pressed="${u.cmp}">Porovnat</button>` : ''}
+      <button class="btn small" data-act="pick-photos"><span class="plus">+</span> Přidat fotografie</button></span>
+      <input type="file" id="photo-input" accept="image/*" multiple hidden data-change="add-photos" data-id="${t.id}"></div>
+    ${t.photos.length ? `<div class="chiprow" role="group" aria-label="Filtr podle období">${chip('', 'Vše', t.photos.length)}${SEASONS.map(([v, l]) => chip(v, l, cnt(v))).join('')}</div>` : ''}
+    ${u.cmp ? `<div class="note-strip cmp-bar" role="status"><span>Označte 2 až 4 fotografie, které chcete vidět vedle sebe. Vybráno: <strong>${u.picks.length}</strong></span>
+      <span class="btns"><button class="btn small primary" data-act="cmp-open" ${u.picks.length < 2 ? 'disabled' : ''}>Porovnat vybrané</button><button class="btn small quiet" data-act="cmp-toggle">Zrušit</button></span></div>` : ''}
+    ${list.length ? `<div class="shots">${list.map(p => { const k = u.picks.indexOf(p.id);
+      return `<button class="shot ${k >= 0 ? 'picked' : ''}" data-act="${u.cmp ? 'cmp-pick' : 'open-photo'}" data-id="${t.id}" data-photo="${p.id}" ${u.cmp ? `aria-pressed="${k >= 0}"` : ''} aria-label="${u.cmp ? 'Vybrat k porovnání' : 'Otevřít'} fotografii z ${fmtDate(p.date)}">
+        <span class="plate">${pic(t, p)}${k >= 0 ? `<span class="pickno">${k + 1}</span>` : ''}</span><span class="cap">${fmtDate(p.date)} · ${SEASON_NAME[seasonOf(p)]}${p.caption ? ' · ' + esc(p.caption) : ''}</span></button>`; }).join('')}</div>`
+    : t.photos.length ? '<div class="blank"><strong>Z tohoto období tu fotografie není.</strong><span>Zvolte jiné období, nebo přidejte další snímek.</span></div>'
+    : '<div class="blank"><strong>Zatím bez fotografie.</strong><span>Foťte strom ve stejném světle a ze stejného úhlu, nejlépe proti klidnému pozadí. Za pár let uvidíte jeho vývoj.</span></div>'}</section>`;
+}
+function repaintPhotos() { const t = tree(photoUI.tree), el = $('#photos-sec'); if (t && el) el.outerHTML = photosSection(t); }
 
 let taskFilter = { status: 'open', cat: '', scope: '' };
 function viewTasks() {
@@ -433,11 +456,11 @@ function viewYamadori() {
 
 /* ---------- Dialogy ---------- */
 const dlg = () => $('#dlg');
-function openDialog(html, { wide = false, onSubmit } = {}) {
-  const d = dlg(); d.className = wide ? 'wide' : ''; d.innerHTML = html; d._submit = onSubmit;
+function openDialog(html, { wide = false, cls = '', onSubmit } = {}) {
+  const d = dlg(); d.className = cls || (wide ? 'wide' : ''); d.innerHTML = html; d._submit = onSubmit;
   if (!d.open) d.showModal();
 }
-function closeDialog() { const d = dlg(); if (d.open) d.close(); d.innerHTML = ''; }
+function closeDialog() { const d = dlg(); if (d.open) d.close(); d.innerHTML = ''; viewer = null; pendingPhotos = null; }
 const head = title => `<div class="dlg-head"><h2>${title}</h2><button type="button" class="icon-btn" data-act="close" aria-label="Zavřít">×</button></div>`;
 function confirmBox(title, text, yesLabel, onYes) {
   openDialog(`<form class="dlg" novalidate>${head(title)}<p>${text}</p><div class="dlg-foot"><button type="button" class="btn quiet" data-act="close">Ponechat</button><button class="btn primary">${yesLabel}</button></div></form>`,
@@ -513,7 +536,7 @@ function treeDialog(t) {
       if (t) { closeDialog(); Object.assign(t, data); if (old !== data.species) illuCache.delete(t.id + '|' + old); return commit('Strom uložen'); }
       const nt = { id: uid(), photos: [], log: [], coverId: null, ...data }, file = $('#tr-photo').files[0];
       if (file) {
-        try { nt.photos.push({ id: uid(), data: await fileToDataURL(file), date: iso(new Date(file.lastModified || Date.now())), caption: '' }); }
+        try { nt.photos.push({ id: uid(), data: await fileToDataURL(file), date: iso(today()), season: seasonFromDate(iso(today())), caption: '' }); }
         catch (e) { return fail('tr-photo', 'Soubor se nepodařilo načíst jako obrázek. Zkuste JPG nebo PNG.'); }
       }
       closeDialog(); state.trees.push(nt); store.save(); toast('Strom přidán do sbírky'); location.hash = 'strom-' + nt.id;
@@ -533,17 +556,59 @@ function logDialog(t) {
   });
 }
 
-function photoDialog(t, p) {
-  const fo = p.focus || 'center';
-  openDialog(`<form class="dlg light" novalidate>${head(esc(t.name))}<img src="${p.data}" alt="${esc(p.caption || t.name)}">
+/* Prohlížeč fotografií: šipky vedle snímku i na klávesnici procházejí právě zobrazený výběr. */
+let viewer = null, pendingPhotos = null;
+const ARROW = left => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${left ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+function openViewer(t, photoId) { const ids = photoList(t).map(p => p.id); viewer = { tree: t.id, ids, i: Math.max(0, ids.indexOf(photoId)) }; paintViewer(); }
+function paintViewer() {
+  const v = viewer, t = tree(v.tree), p = t.photos.find(x => x.id === v.ids[v.i]), many = v.ids.length > 1, fo = p.focus || 'center';
+  openDialog(`<form class="dlg light" novalidate>${head(`${esc(t.name)}${many ? `<span class="count">${v.i + 1} / ${v.ids.length}</span>` : ''}`)}
+    <div class="stage">${many ? `<button type="button" class="nav prev" data-act="viewer-step" data-dir="-1" aria-label="Předchozí fotografie" title="Předchozí (šipka vlevo)">${ARROW(true)}</button>` : ''}
+      <img src="${p.data}" alt="${esc(p.caption || t.name)}">
+      ${many ? `<button type="button" class="nav next" data-act="viewer-step" data-dir="1" aria-label="Další fotografie" title="Další (šipka vpravo)">${ARROW(false)}</button>` : ''}</div>
     <div class="row2">${F('ph-caption', 'Popisek', `<input type="text" id="ph-caption" maxlength="80" value="${esc(p.caption)}" placeholder="např. po jarním střihu">`)}
       ${F('ph-date', 'Datum pořízení', `<input type="date" id="ph-date" value="${p.date}">`)}</div>
-    ${F('ph-focus', 'Výřez v katalogu', `<select id="ph-focus"><option value="top" ${fo === 'top' ? 'selected' : ''}>Koruna (horní část snímku)</option><option value="center" ${fo === 'center' ? 'selected' : ''}>Střed snímku</option><option value="bottom" ${fo === 'bottom' ? 'selected' : ''}>Miska a pata kmene (spodní část)</option></select>`)}
+    <div class="row2">${F('ph-season', 'Období', `<select id="ph-season">${seasonOpts(seasonOf(p))}</select>`)}
+      ${F('ph-focus', 'Výřez v katalogu', `<select id="ph-focus"><option value="top" ${fo === 'top' ? 'selected' : ''}>Koruna (horní část snímku)</option><option value="center" ${fo === 'center' ? 'selected' : ''}>Střed snímku</option><option value="bottom" ${fo === 'bottom' ? 'selected' : ''}>Miska a pata kmene (spodní část)</option></select>`)}</div>
     <div class="dlg-foot"><button type="button" class="btn danger left" data-act="del-photo" data-id="${t.id}" data-photo="${p.id}">Smazat fotografii</button>
       <button type="button" class="btn quiet" data-act="set-cover" data-id="${t.id}" data-photo="${p.id}">Nastavit jako titulní</button><button class="btn primary">Uložit</button></div></form>`, {
+    wide: true, onSubmit() { if (!applyPhoto(p, true)) return; closeDialog(); commit('Fotografie uložena'); },
+  });
+  dlg().setAttribute('tabindex', '-1'); dlg().focus();
+}
+function applyPhoto(p, strict) {
+  const d = $('#ph-date').value;
+  if (!d) { if (strict) fail('ph-date', 'Doplňte datum pořízení, fotografie se podle něj řadí.'); return false; }
+  const before = [p.caption, p.date, seasonOf(p), p.focus || 'center'].join('|');
+  p.caption = $('#ph-caption').value.trim(); p.date = d; p.season = $('#ph-season').value; p.focus = $('#ph-focus').value;
+  return before !== [p.caption, p.date, p.season, p.focus].join('|') ? 'changed' : 'same';
+}
+function viewerStep(dir) {
+  const v = viewer; if (!v || v.ids.length < 2) return;
+  const p = tree(v.tree).photos.find(x => x.id === v.ids[v.i]);
+  if (applyPhoto(p, false) === 'changed') { store.save(); render(); }
+  v.i = (v.i + dir + v.ids.length) % v.ids.length; paintViewer();
+}
+function compareDialog(t, ids) {
+  const list = ids.map(id => t.photos.find(p => p.id === id)).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+  openDialog(`<div class="dlg">${head(`Porovnání<span class="count">${esc(t.name)}</span>`)}
+    <div class="cmp-grid n${list.length}">${list.map(p => `<figure><img src="${p.data}" alt="${esc(p.caption || t.name)}"><figcaption><strong>${fmtDate(p.date)}</strong> · ${SEASON_NAME[seasonOf(p)]}${p.caption ? ' · ' + esc(p.caption) : ''}</figcaption></figure>`).join('')}</div>
+    <div class="dlg-foot"><span class="help left">Seřazeno od nejstarší po nejnovější.</span><button type="button" class="btn primary" data-act="close">Zavřít</button></div></div>`, { cls: 'full' });
+}
+/* Vkládání: po výběru souborů se u každé fotografie rovnou nastaví datum pořízení, období a popisek. */
+function newPhotosDialog(t) {
+  const list = pendingPhotos.items, td = iso(today());
+  openDialog(`<form class="dlg" novalidate>${head(list.length > 1 ? 'Nové fotografie' : 'Nová fotografie')}
+    <p class="help">Datum je přednastavené na dnešek. U starších snímků ho přepište, období se podle něj upraví samo a jde změnit ručně, třeba u listnáče vyfoceného už bez listí.</p>
+    <div class="pp-list">${list.map((ph, i) => `<div class="pp-row"><img src="${ph.data}" alt="Náhled fotografie ${i + 1}">
+      <div class="pp-fields"><div class="row2">${F('pp-date-' + i, 'Datum pořízení', `<input type="date" id="pp-date-${i}" value="${td}">`)}${F('pp-season-' + i, 'Období', `<select id="pp-season-${i}">${seasonOpts(seasonFromDate(td))}</select>`)}</div>
+        ${F('pp-cap-' + i, 'Popisek (nepovinný)', `<input type="text" id="pp-cap-${i}" maxlength="80" placeholder="např. po jarním střihu">`)}</div></div>`).join('')}</div>
+    <div class="dlg-foot">${list.length > 1 ? '<button type="button" class="btn quiet left" data-act="pp-copy">Datum a období první fotky použít u všech</button>' : ''}
+      <button type="button" class="btn quiet" data-act="close">Zrušit</button><button class="btn primary">${list.length > 1 ? `Přidat ${list.length} ${plural(list.length, 'fotografii', 'fotografie', 'fotografií')}` : 'Přidat fotografii'}</button></div></form>`, {
     wide: true, onSubmit() {
-      if (!$('#ph-date').value) return fail('ph-date', 'Doplňte datum pořízení, fotografie se podle něj řadí.');
-      p.caption = $('#ph-caption').value.trim(); p.date = $('#ph-date').value; p.focus = $('#ph-focus').value; closeDialog(); commit('Fotografie uložena');
+      for (let i = 0; i < list.length; i++) if (!$('#pp-date-' + i).value) return fail('pp-date-' + i, 'Doplňte datum pořízení, fotografie se podle něj řadí.');
+      list.forEach((ph, i) => t.photos.push({ id: uid(), data: ph.data, date: $('#pp-date-' + i).value, season: $('#pp-season-' + i).value, caption: $('#pp-cap-' + i).value.trim() }));
+      const n = list.length; closeDialog(); commit(`Přidáno: ${n} ${plural(n, 'fotografie', 'fotografie', 'fotografií')}`);
     },
   });
 }
@@ -681,7 +746,15 @@ const actions = {
     store.save(); toast('Strom smazán'); location.hash = 'sbirka'; }); },
   'new-log': el => logDialog(tree(el.dataset.id)),
   'del-log': el => { const t = tree(el.dataset.id); t.log = t.log.filter(l => l.id !== el.dataset.log); commit('Záznam smazán'); },
-  'open-photo': el => { const t = tree(el.dataset.id); photoDialog(t, t.photos.find(p => p.id === el.dataset.photo)); },
+  'open-photo': el => openViewer(tree(el.dataset.id), el.dataset.photo),
+  'viewer-step': el => viewerStep(Number(el.dataset.dir)),
+  'ph-filter': el => { photoUI.season = el.dataset.v; photoUI.picks = []; repaintPhotos(); },
+  'cmp-toggle': () => { photoUI.cmp = !photoUI.cmp; photoUI.picks = []; repaintPhotos(); },
+  'cmp-pick': el => { const k = photoUI.picks.indexOf(el.dataset.photo);
+    if (k >= 0) photoUI.picks.splice(k, 1); else if (photoUI.picks.length < 4) photoUI.picks.push(el.dataset.photo); else return toast('Porovnat jdou nejvýš 4 fotografie najednou. Některou nejdřív odznačte.', true);
+    repaintPhotos(); },
+  'cmp-open': () => compareDialog(tree(photoUI.tree), photoUI.picks),
+  'pp-copy': () => { const d = $('#pp-date-0').value, s = $('#pp-season-0').value; pendingPhotos.items.forEach((_, i) => { $('#pp-date-' + i).value = d; $('#pp-season-' + i).value = s; clearErr($('#pp-date-' + i)); }); },
   'del-photo': el => { const t = tree(el.dataset.id); t.photos = t.photos.filter(p => p.id !== el.dataset.photo); if (t.coverId === el.dataset.photo) t.coverId = null; closeDialog(); commit('Fotka smazána'); },
   'set-cover': el => { tree(el.dataset.id).coverId = el.dataset.photo; closeDialog(); commit('Titulní fotka nastavena'); },
   'clear-demo': () => confirmBox('Smazat ukázku?', 'Ukázkové stromy a úkoly zmizí a deník bude prázdný, připravený na vaši sbírku.', 'Smazat ukázku', () => { state = { trees: [], tasks: [], demo: false }; commit('Ukázka smazána'); }),
@@ -721,9 +794,12 @@ const changes = {
   'filter-species': el => { filter.species = el.value; render(); },
   'add-photos': async el => {
     const t = tree(el.dataset.id), files = [...el.files]; if (!files.length) return;
-    toast('Zpracovávám fotografie…'); let ok = 0;
-    for (const f of files) { try { t.photos.push({ id: uid(), data: await fileToDataURL(f), date: iso(new Date(f.lastModified || Date.now())), caption: '' }); ok++; } catch (e) { /* nečitelný soubor přeskočíme */ } }
-    store.save(); render(); ok ? toast(`Přidáno: ${ok} ${plural(ok, 'fotografie', 'fotografie', 'fotografií')}`) : toast('Soubor se nepodařilo načíst jako obrázek. Zkuste JPG nebo PNG.', true);
+    toast('Zpracovávám fotografie…'); const items = []; let bad = 0;
+    for (const f of files) { try { items.push({ data: await fileToDataURL(f) }); } catch (e) { bad++; } }
+    el.value = '';
+    if (!items.length) return toast('Soubor se nepodařilo načíst jako obrázek. Zkuste JPG nebo PNG.', true);
+    if (bad) toast(`${bad} ${plural(bad, 'soubor se nepodařilo', 'soubory se nepodařilo', 'souborů se nepodařilo')} načíst jako obrázek, ostatní jsou připravené.`, true);
+    pendingPhotos = { tree: t.id, items }; newPhotosDialog(t);
   },
   import: async el => {
     try {
@@ -738,6 +814,9 @@ document.addEventListener('click', e => { const el = e.target.closest('[data-act
 document.addEventListener('change', e => {
   const el = e.target.closest('[data-change]'); if (el && changes[el.dataset.change]) return changes[el.dataset.change](el);
   if (e.target.name === 'prec') { $('#tk-date').hidden = e.target.value !== 'day'; $('#tk-monthrow').hidden = e.target.value !== 'month'; }
+  if (e.target.id.startsWith('pp-season-')) e.target.dataset.touched = '1';
+  if (e.target.id.startsWith('pp-date-') && e.target.value) { const s = $('#pp-season-' + e.target.id.slice(8)); if (!s.dataset.touched) s.value = seasonFromDate(e.target.value); }
+  if (e.target.id === 'ph-date' && e.target.value) $('#ph-season').value = seasonFromDate(e.target.value);
   if (e.target.id === 'tk-repeat') $('#tk-repeat-help').hidden = !e.target.value;
   if (e.target.id === 'tk-scope') { $('#tk-tree').hidden = e.target.value !== 'tree'; $('#tk-species').hidden = e.target.value !== 'species'; }
 });
@@ -746,6 +825,11 @@ document.addEventListener('input', e => {
   if (e.target.dataset.input === 'filter-q') { filter.q = e.target.value; $('#cards').innerHTML = catalogHtml(); }
 });
 document.addEventListener('submit', e => { e.preventDefault(); if (e.target.id === 'gate-form') return gateSubmit(); const d = dlg(); if (d.contains(e.target) && d._submit) d._submit(); });
+document.addEventListener('keydown', e => {
+  if (!viewer || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.target.matches && e.target.matches('input, select, textarea')) return;
+  e.preventDefault(); viewerStep(e.key === 'ArrowLeft' ? -1 : 1);
+});
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 
 (async function start() {

@@ -24,6 +24,7 @@ create table public.photos (
   taken_on date not null,
   caption text not null default '',
   focus text not null default 'center',
+  season text not null default '',
   created_at timestamptz not null default now()
 );
 
