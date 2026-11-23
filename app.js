@@ -11,6 +11,9 @@ const STYLES = ['Chokkan (formální vzpřímený)', 'Moyogi (volně vzpřímen�
   'Bunjin (literátský)', 'Fukinagashi (ve větru)', 'Hokidachi (koště)', 'Sokan (dvojkmen)', 'Kabudachi (vícekmen)', 'Yose-ue (lesík)', 'Ishizuki (na kameni)'];
 const TASK_HINTS = ['Přesadit', 'Drátovat', 'Odstranit drát', 'Strukturální střih', 'Udržovací střih', 'Hnojit', 'Zimní postřik', 'Defoliace',
   'Lámání svíček', 'Čištění starého jehličí', 'Přesunout do zimoviště', 'Vyfotit'];
+const CATEGORIES = ['Drátování', 'Stříhání', 'Přesazování', 'Hnojení', 'Zálivka', 'Ochrana a postřiky', 'Zimování', 'Yamadori', 'Nákupy a příprava', 'Jiné'];
+const REPEATS = [['', 'Neopakovat'], ['1w', 'Každý týden'], ['2w', 'Každých 14 dní'], ['1m', 'Každý měsíc'], ['3m', 'Každé 3 měsíce'], ['6m', 'Každého půl roku'], ['1y', 'Každý rok']];
+const REPEAT_SHORT = { '1w': 'týdně', '2w': 'po 14 dnech', '1m': 'měsíčně', '3m': 'po 3 měsících', '6m': 'půlročně', '1y': 'ročně' };
 const LOG_TYPES = ['Přesazení', 'Drátování', 'Odstranění drátu', 'Střih', 'Hnojení', 'Postřik', 'Poznámka'];
 /* Sezónní rádce: [název období, co je vhodné, čemu se vyhnout] pro leden až prosinec. */
 const SEASON = [
@@ -127,6 +130,21 @@ function dueInfo(t) {
   if (diff <= 14) return { text: `◆ za ${diff} ${days(diff)}`, cls: 'is-soon' };
   return { text: '', cls: '' };
 }
+/* Další termín opakovaného úkolu: od původního termínu, a kdyby vyšel do minulosti, tak ode dneška. */
+function nextDue(t) {
+  const n = parseInt(t.repeat, 10), unit = t.repeat.slice(-1), td = today();
+  if (t.due && t.due.length === 7 && unit !== 'w') {
+    const [y, m] = t.due.split('-').map(Number), add = unit === 'y' ? 12 * n : n, cur = new Date(td.getFullYear(), td.getMonth(), 1);
+    let d = new Date(y, m - 1 + add, 1);
+    if (d <= cur) d = new Date(cur.getFullYear(), cur.getMonth() + add, 1);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  }
+  const step = d => { const x = new Date(d); if (unit === 'w') x.setDate(x.getDate() + 7 * n); else if (unit === 'm') x.setMonth(x.getMonth() + n); else x.setFullYear(x.getFullYear() + n); return x; };
+  let base = td; if (t.due && t.due.length === 10) { const [y, m, d] = t.due.split('-').map(Number); base = new Date(y, m - 1, d); }
+  let nx = step(base); if (nx <= td) nx = step(td);
+  return iso(nx);
+}
+const dueText = s => !s ? 'bez termínu' : s.length === 7 ? `${MONTHS[Number(s.slice(5)) - 1]} ${s.slice(0, 4)}` : fmtDate(s);
 const byDeadline = (a, b) => (deadline(a)?.getTime() ?? Infinity) - (deadline(b)?.getTime() ?? Infinity);
 const tree = id => state.trees.find(t => t.id === id);
 const speciesInUse = () => [...new Set(state.trees.map(t => t.species).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'cs'));
@@ -148,14 +166,15 @@ function taskRow(t) {
     <label class="tick" for="chk-${t.id}"><input type="checkbox" id="chk-${t.id}" data-change="toggle-task" data-id="${t.id}" ${t.done ? 'checked' : ''} aria-label="${t.done ? 'Vrátit mezi otevřené' : 'Označit jako hotové'}: ${esc(t.title)}"></label>
     <div class="when">${whenCol(t)}</div>
     <div class="what"><label for="chk-${t.id}">${esc(t.title)}</label>
-      <div class="meta">${d.text ? `<span class="state">${d.text}</span>` : ''}${scopeTag(t.scope)}</div>
+      <div class="meta">${d.text ? `<span class="state">${d.text}</span>` : ''}${scopeTag(t.scope)}${t.category ? `<span class="cat">${esc(t.category)}</span>` : ''}${t.repeat && REPEAT_SHORT[t.repeat] ? `<span class="rep" title="Opakovaný úkol">↻ ${REPEAT_SHORT[t.repeat]}</span>` : ''}</div>
       ${t.note ? `<div class="memo">${esc(t.note)}</div>` : ''}</div>
     <button class="icon-btn" data-act="edit-task" data-id="${t.id}" aria-label="Upravit úkol ${esc(t.title)}" title="Upravit">⋯</button></li>`;
 }
-function taskList(tasks, emptyTitle, emptyText) {
-  const open = tasks.filter(t => !t.done).sort(byDeadline);
+function taskList(tasks, emptyTitle, emptyText, limit) {
+  let open = tasks.filter(t => !t.done).sort(byDeadline); const more = limit && open.length > limit ? open.length - limit : 0; if (more) open = open.slice(0, limit);
   const done = tasks.filter(t => t.done).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
   return (open.length ? `<ul class="entries">${open.map(taskRow).join('')}</ul>` : `<div class="blank"><strong>${emptyTitle}</strong><span>${emptyText}</span></div>`) +
+    (more ? `<p class="more"><a href="#ukoly">Dalších ${more} ${plural(more, 'úkol', 'úkoly', 'úkolů')} na stránce Úkoly →</a></p>` : '') +
     (done.length ? `<details class="done-list"><summary>Splněné (${done.length})</summary><ul class="entries">${done.map(taskRow).join('')}</ul></details>` : '');
 }
 
@@ -209,6 +228,7 @@ const ico = d => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" st
 const ICON = {
   home: ico('<path d="M5 4h14v16H5zM9 4v16M12.500 9h3.500M12.500 13h3.500"/>'),
   tree: ico('<path d="M12 17v-5M7 17h10l-1 3H8zM12 12c-4 0-7-1.500-7-4.500S8 3 12 3s7 1.500 7 4.500S16 12 12 12z"/>'),
+  list: ico('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5.500l1 1 1.500-2M4 11.500l1 1 1.500-2M4 17.500l1 1 1.500-2"/>'),
   map: ico('<path d="M12 21s6-5.500 6-10.500a6 6 0 0 0-12 0C6 15.500 12 21 12 21z"/><circle cx="12" cy="10.500" r="2"/>'),
 };
 const SEAL = `<svg class="seal" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="3" fill="var(--clay)"/><g fill="none" stroke="var(--paper)" stroke-width="1.600" stroke-linecap="round"><path d="M13 19v-6c0-2 2-2.500 3.500-4"/><path d="M8 19h10"/><path d="M7 10.500h7M12.500 7h7"/></g></svg>`;
@@ -217,20 +237,20 @@ const SEAL = `<svg class="seal" viewBox="0 0 26 26" aria-hidden="true"><rect wid
 function route() {
   const h = location.hash.replace('#', '');
   if (h.startsWith('strom-')) return { view: 'tree', id: h.slice(6) };
-  return { view: ['sbirka', 'yamadori'].includes(h) ? h : 'prehled' };
+  return { view: ['sbirka', 'yamadori', 'ukoly'].includes(h) ? h : 'prehled' };
 }
 let filter = { q: '', species: '' };
 function render() {
   if (cloud.client && !cloud.user) return;
   const r = route(), cur = v => (r.view === v || (v === 'sbirka' && r.view === 'tree')) ? 'aria-current="page"' : '';
-  const body = r.view === 'tree' ? viewTree(r.id) : r.view === 'sbirka' ? viewCollection() : r.view === 'yamadori' ? viewYamadori() : viewDashboard();
+  const body = r.view === 'tree' ? viewTree(r.id) : r.view === 'sbirka' ? viewCollection() : r.view === 'yamadori' ? viewYamadori() : r.view === 'ukoly' ? viewTasks() : viewDashboard();
   const link = (v, label, extra = '') => `<a href="#${v}" ${cur(v)}>${label}${extra}</a>`;
   $('#app').innerHTML = `<header class="top"><div class="top-in gut">
       <a class="brand" href="#prehled" aria-label="Bonsai deník, přehled">${SEAL}${r.view === 'prehled' ? '' : '<span>Bonsai deník</span>'}</a>
-      <nav class="links" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('sbirka', ICON.tree + '<span>Moje sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>', '<span class="soon-tag">ve vývoji</span>')}</nav>
+      <nav class="links" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('ukoly', ICON.list + '<span>Úkoly</span>')}${link('sbirka', ICON.tree + '<span>Moje sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>', '<span class="soon-tag">ve vývoji</span>')}</nav>
       <span class="util-wrap">${cloud.user ? '<button class="sync" id="sync" data-act="retry-sync"></button>' : ''}<button class="util" data-act="settings">${cloud.user ? 'Účet a záloha' : 'Záloha a data'}</button></span></div></header>
     <main class="gut"><div class="wrap ${r.view === 'prehled' ? 'dash' : ''}">${body}</div></main>
-    <nav class="tabs" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('sbirka', ICON.tree + '<span>Sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>')}</nav>`;
+    <nav class="tabs" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('ukoly', ICON.list + '<span>Úkoly</span>')}${link('sbirka', ICON.tree + '<span>Sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>')}</nav>`;
   paintSync();
 }
 const strips = () => (pendingLocal ? `<div class="note-strip strip-wrap"><span>V tomto prohlížeči je uložený deník z dřívějška (${pendingLocal.trees.length} ${plural(pendingLocal.trees.length, 'strom', 'stromy', 'stromů')}, ${pendingLocal.tasks.length} ${plural(pendingLocal.tasks.length, 'úkol', 'úkoly', 'úkolů')}). Chcete ho přenést do účtu?</span><span class="btns"><button class="btn small primary" data-act="adopt-local">Přenést do účtu</button><button class="btn small quiet" data-act="skip-local">Nepřenášet</button></span></div>` : '') +
@@ -289,8 +309,8 @@ function viewDashboard() {
       <header class="lead-text"><div><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1 class="display">Bonsai deník</h1>
         <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce, <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? `, z toho <strong>${late} po termínu</strong>` : ''}.</p></div>
         <button class="btn primary" data-act="new-task"><span class="plus">+</span> Přidat úkol</button></header>
-      <section class="diary frame"><div class="sec-head"><h2>Nejbližší úkoly</h2><span class="side">řazeno podle termínu</span></div>
-        ${taskList(state.tasks, 'Diář je prázdný.', 'Zapište první úkol tlačítkem Přidat úkol, třeba přesazení na jaře.')}</section>
+      <section class="diary frame"><div class="sec-head"><h2>Nejbližší úkoly</h2><span class="side"><a href="#ukoly">Všechny úkoly →</a></span></div>
+        ${taskList(state.tasks, 'Diář je prázdný.', 'Zapište první úkol tlačítkem Přidat úkol, třeba přesazení na jaře.', 8)}</section>
       ${strips()}
       <section class="catalog-sec"><div class="sec-head"><h2>Sbírka</h2><span class="side"><a href="#sbirka">Celý katalog →</a></span></div>
         ${state.trees.length ? `<div class="catalog compact" style="padding-top:18px">${state.trees.slice(0, 12).map(t => item(t, true)).join('')}</div>`
@@ -351,6 +371,35 @@ function viewTree(id) {
       : '<div class="blank"><strong>Zatím bez fotografie.</strong><span>Foťte strom ve stejném světle a ze stejného úhlu, nejlépe proti klidnému pozadí. Za pár let uvidíte jeho vývoj.</span></div>'}</section>`;
 }
 
+let taskFilter = { status: 'open', cat: '', scope: '' };
+function viewTasks() {
+  const f = taskFilter, sp = speciesInUse();
+  const match = t => (!f.cat || (f.cat === '-' ? !t.category : t.category === f.cat)) &&
+    (!f.scope || (f.scope === 'g' ? t.scope.type === 'general' : f.scope[0] === 't' ? t.scope.type === 'tree' && t.scope.value === f.scope.slice(2) : t.scope.type === 'species' && t.scope.value === f.scope.slice(2)));
+  const all = state.tasks.filter(match), open = all.filter(t => !t.done).sort(byDeadline);
+  const count = { open: open.length, repeat: all.filter(t => !t.done && t.repeat).length, done: all.filter(t => t.done).length };
+  const tab = (k, label) => `<button class="tabbtn" data-act="tf-status" data-v="${k}" ${f.status === k ? 'aria-pressed="true"' : 'aria-pressed="false"'}>${label}<span class="num">${count[k]}</span></button>`;
+  const group = (title, list) => list.length ? `<section class="tgroup"><h2>${title}<span class="num">${list.length}</span></h2><ul class="entries">${list.map(taskRow).join('')}</ul></section>` : '';
+  let body;
+  if (f.status === 'done') { const d = all.filter(t => t.done).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || '')); body = group('Splněné', d); }
+  else {
+    const list = f.status === 'repeat' ? open.filter(t => t.repeat) : open, st = t => dueInfo(t).cls;
+    body = group('Po termínu', list.filter(t => st(t) === 'is-late')) + group('Blíží se', list.filter(t => st(t) === 'is-soon')) +
+      group('Později', list.filter(t => !st(t) && t.due)) + group('Bez termínu', list.filter(t => !t.due));
+  }
+  const filtered = f.cat || f.scope;
+  return `<header class="page-head"><div><p class="eyebrow">Diář</p><h1>Úkoly</h1></div><button class="btn primary" data-act="new-task"><span class="plus">+</span> Přidat úkol</button></header>
+    ${cloud.user && !cloud.extra ? '<div class="note-strip warn" role="alert"><span>Kategorie a opakování se zatím neukládají na server, databáze čeká na aktualizaci. Do té doby vydrží jen do obnovení stránky.</span></div>' : ''}
+    <div class="tfilters"><div class="tabrow" role="group" aria-label="Stav úkolů">${tab('open', 'Otevřené')}${tab('repeat', 'Opakované')}${tab('done', 'Splněné')}</div>
+      <select id="tf-cat" data-change="tf-cat" aria-label="Filtr podle kategorie"><option value="">Všechny kategorie</option>${CATEGORIES.map(c => `<option ${f.cat === c ? 'selected' : ''}>${c}</option>`).join('')}<option value="-" ${f.cat === '-' ? 'selected' : ''}>Bez kategorie</option></select>
+      <select id="tf-scope" data-change="tf-scope" aria-label="Filtr podle štítku"><option value="">Všechny štítky</option><option value="g" ${f.scope === 'g' ? 'selected' : ''}>Obecné úkoly</option>
+        ${state.trees.length ? `<optgroup label="Strom">${state.trees.map(t => `<option value="t:${t.id}" ${f.scope === 't:' + t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>
+        <optgroup label="Druh">${sp.map(s => `<option value="s:${esc(s)}" ${f.scope === 's:' + s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>` : ''}</select></div>
+    ${body || `<div class="blank"><strong>${filtered ? 'Filtru neodpovídá žádný úkol.' : f.status === 'done' ? 'Zatím nic splněného.' : f.status === 'repeat' ? 'Žádný opakovaný úkol.' : 'Diář je prázdný.'}</strong>
+      <span>${filtered ? 'Zkuste jinou kategorii nebo štítek.' : f.status === 'repeat' ? 'Opakování nastavíte při zadání úkolu, třeba hnojení každých 14 dní nebo přesazení jednou za rok.' : 'Úkol přidáte tlačítkem nahoře.'}</span>
+      ${filtered ? '<button class="btn small" data-act="tf-reset">Zrušit filtry</button>' : ''}</div>`}`;
+}
+
 function contours() {
   let out = '';
   for (const [cx, cy, c] of [[170, 150, 1], [470, 210, 2.200], [690, 70, 4]]) for (let k = 1; k <= 8; k++) {
@@ -402,7 +451,7 @@ function fail(id, msg) { const el = $('#' + id), e = $('#e-' + id); el.setAttrib
 function clearErr(el) { if (el.getAttribute('aria-invalid')) { el.removeAttribute('aria-invalid'); const e = $('#e-' + el.id); if (e) e.hidden = true; } }
 
 function taskDialog(task, presetTree) {
-  const t = task || { title: '', due: '', scope: presetTree ? { type: 'tree', value: presetTree } : { type: 'general' }, note: '' };
+  const t = task || { title: '', due: '', scope: presetTree ? { type: 'tree', value: presetTree } : { type: 'general' }, note: '', category: taskFilter.cat && taskFilter.cat !== '-' && route().view === 'ukoly' ? taskFilter.cat : '', repeat: '' };
   const prec = task ? (!t.due ? 'none' : t.due.length === 7 ? 'month' : 'day') : (presetTree ? 'month' : 'day');
   const n = today(), [my, mm] = t.due && t.due.length === 7 ? t.due.split('-').map(Number) : [n.getFullYear(), n.getMonth() + 1];
   const sp = speciesInUse(), noTrees = !state.trees.length;
@@ -423,6 +472,9 @@ function taskDialog(task, presetTree) {
       <select id="tk-tree" aria-label="Strom" ${t.scope.type === 'tree' ? '' : 'hidden'}>${state.trees.map(x => `<option value="${x.id}" ${x.id === t.scope.value ? 'selected' : ''}>${esc(x.name)} (${esc(x.species)})</option>`).join('')}</select>
       <select id="tk-species" aria-label="Druh" ${t.scope.type === 'species' ? '' : 'hidden'}>${opts(sp, t.scope.value)}</select>
       ${noTrees ? '<p class="help">Štítek stromu nebo druhu půjde zvolit, jakmile bude ve sbírce první strom.</p>' : ''}</div></fieldset>
+    <div class="row2">${F('tk-cat', 'Kategorie', `<select id="tk-cat"><option value="">Bez kategorie</option>${opts(CATEGORIES, t.category)}</select>`)}
+      ${F('tk-repeat', 'Opakování', `<select id="tk-repeat">${REPEATS.map(([v, l]) => `<option value="${v}" ${v === (t.repeat || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}</div>
+    <p class="help" id="tk-repeat-help" ${t.repeat ? '' : 'hidden'}>Po odškrtnutí se úkol sám založí znovu s dalším termínem.</p>
     ${F('tk-note', 'Poznámka (nepovinná)', `<input type="text" id="tk-note" maxlength="200" value="${esc(t.note)}">`)}
     <div class="dlg-foot">${task ? `<button type="button" class="btn danger left" data-act="del-task" data-id="${task.id}">Smazat úkol</button>` : ''}
       <button type="button" class="btn quiet" data-act="close">Zrušit</button><button class="btn primary">${task ? 'Uložit úkol' : 'Přidat úkol'}</button></div></form>`, {
@@ -432,7 +484,7 @@ function taskDialog(task, presetTree) {
       if (p === 'day' && !$('#tk-date').value) return fail('tk-date', 'Vyberte den, nebo zvolte termín na celý měsíc.');
       if (p === 'month' && !(yr >= 2000 && yr <= 2100)) return fail('tk-year', 'Zadejte rok mezi 2000 a 2100.');
       const due = p === 'day' ? $('#tk-date').value : p === 'month' ? `${yr}-${pad($('#tk-month').value)}` : '';
-      const data = { title, due, note: $('#tk-note').value.trim(),
+      const data = { title, due, note: $('#tk-note').value.trim(), category: $('#tk-cat').value, repeat: $('#tk-repeat').value,
         scope: sc === 'tree' ? { type: 'tree', value: $('#tk-tree').value } : sc === 'species' ? { type: 'species', value: $('#tk-species').value } : { type: 'general' } };
       if (task) Object.assign(task, data); else state.tasks.push({ id: uid(), done: false, doneAt: null, logId: null, ...data });
       closeDialog(); commit(task ? 'Úkol uložen' : 'Úkol přidán');
@@ -572,7 +624,7 @@ function reid(s) {
   const trees = s.trees.map(t => ({ ...t, id: n(t.id), coverId: t.coverId ? n(t.coverId) : null,
     photos: (t.photos || []).filter(p => String(p.data).startsWith('data:')).map(p => ({ ...p, id: n(p.id), path: undefined })),
     log: (t.log || []).map(l => ({ ...l, id: n(l.id) })) }));
-  const tasks = s.tasks.map(t => ({ ...t, id: n(t.id), logId: t.logId ? n(t.logId) : null, scope: t.scope.type === 'tree' ? { type: 'tree', value: n(t.scope.value) } : t.scope }));
+  const tasks = s.tasks.map(t => ({ ...t, id: n(t.id), logId: t.logId ? n(t.logId) : null, nextId: t.nextId ? n(t.nextId) : null, scope: t.scope.type === 'tree' ? { type: 'tree', value: n(t.scope.value) } : t.scope }));
   return { trees, tasks, demo: false };
 }
 async function enter() {
@@ -604,6 +656,8 @@ async function fileToDataURL(file) {
 /* ---------- Akce ---------- */
 const actions = {
   close: closeDialog,
+  'tf-status': el => { taskFilter.status = el.dataset.v; render(); },
+  'tf-reset': () => { taskFilter.cat = ''; taskFilter.scope = ''; render(); },
   'season-shift': el => seasonShift(Number(el.dataset.dir)),
   'season-today': () => { seasonOff = 0; const el = $('.season'); if (el) el.outerHTML = seasonHtml(); },
   'gate-mode': el => { gate = { mode: el.dataset.mode, email: $('#au-email') ? $('#au-email').value.trim() : '', note: '' }; renderGate(); },
@@ -654,8 +708,16 @@ const changes = {
     const tr = t.scope.type === 'tree' ? tree(t.scope.value) : null;
     if (tr && t.done) { t.logId = uid(); tr.log.push({ id: t.logId, type: t.title, date: t.doneAt, note: 'Splněný úkol' }); }
     if (tr && !t.done && t.logId) { tr.log = tr.log.filter(l => l.id !== t.logId); t.logId = null; }
-    commit(t.done ? 'Hotovo' : 'Úkol vrácen mezi otevřené');
+    let msg = t.done ? 'Hotovo' : 'Úkol vrácen mezi otevřené';
+    if (t.done && t.repeat) {
+      const nx = { id: uid(), title: t.title, due: nextDue(t), scope: { ...t.scope }, note: t.note, category: t.category || '', repeat: t.repeat, done: false, doneAt: null, logId: null, nextId: null };
+      state.tasks.push(nx); t.nextId = nx.id; msg = `Hotovo, další termín ${dueText(nx.due)}`;
+    }
+    if (!t.done && t.nextId) { const nx = state.tasks.find(x => x.id === t.nextId); if (nx && !nx.done) state.tasks = state.tasks.filter(x => x !== nx); t.nextId = null; }
+    commit(msg);
   },
+  'tf-cat': el => { taskFilter.cat = el.value; render(); },
+  'tf-scope': el => { taskFilter.scope = el.value; render(); },
   'filter-species': el => { filter.species = el.value; render(); },
   'add-photos': async el => {
     const t = tree(el.dataset.id), files = [...el.files]; if (!files.length) return;
@@ -676,6 +738,7 @@ document.addEventListener('click', e => { const el = e.target.closest('[data-act
 document.addEventListener('change', e => {
   const el = e.target.closest('[data-change]'); if (el && changes[el.dataset.change]) return changes[el.dataset.change](el);
   if (e.target.name === 'prec') { $('#tk-date').hidden = e.target.value !== 'day'; $('#tk-monthrow').hidden = e.target.value !== 'month'; }
+  if (e.target.id === 'tk-repeat') $('#tk-repeat-help').hidden = !e.target.value;
   if (e.target.id === 'tk-scope') { $('#tk-tree').hidden = e.target.value !== 'tree'; $('#tk-species').hidden = e.target.value !== 'species'; }
 });
 document.addEventListener('input', e => {

@@ -390,3 +390,21 @@ input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px;
 .season-arrow:disabled { opacity: .3; cursor: default; }
 .season-arrow svg { transition: transform .15s; }
 @media (max-width: 1080px) { .wrap.dash { grid-template-columns: minmax(0, 1fr); } .dash-main { max-width: none; } }
+
+/* Stránka Úkoly */
+.entry .cat { font-size: .68rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.entry .rep { white-space: nowrap; color: var(--ink); font-weight: 500; }
+.more { padding: 12px 0 4px; font-size: .88rem; }
+.tfilters { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.tfilters select { flex: 1 1 180px; max-width: 260px; }
+.tabrow { display: flex; border: 1px solid var(--ink); border-radius: 3px; overflow: hidden; }
+.tabbtn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 14px; border: 0; border-right: 1px solid var(--rule); background: var(--card); cursor: pointer; font-size: .9rem; font-weight: 500; color: var(--ink-2); }
+.tabbtn:last-child { border-right: 0; }
+.tabbtn .num { font-size: .75rem; color: var(--ink-2); }
+.tabbtn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.tabbtn[aria-pressed="true"] .num { color: var(--paper); }
+.tabbtn:focus-visible { outline-offset: -3px; }
+.tgroup { display: flex; flex-direction: column; max-width: 920px; }
+.tgroup h2 { display: flex; align-items: baseline; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--ink); font-size: 1.4rem; }
+.tgroup h2 .num { font: 500 .8rem var(--sans); color: var(--ink-2); }
+@media (max-width: 760px) { .tabrow { width: 100%; } .tabbtn { flex: 1; justify-content: center; padding: 8px 6px; } .tfilters select { max-width: none; } .tabs a { font-size: .68rem; } }

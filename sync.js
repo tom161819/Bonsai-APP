@@ -11,6 +11,7 @@ const cloud = {
   user: null,
   snap: null,
   status: 'saved',
+  extra: false, // true, když databáze už má sloupce pro kategorii a opakování
   onStatus() {},
   _chain: Promise.resolve(),
   _pending: false,
@@ -25,7 +26,8 @@ const cloud = {
       photos: state.trees.flatMap(t => t.photos.filter(p => p.path).map(p => ({ id: p.id, tree_id: t.id, path: p.path, taken_on: p.date, caption: p.caption || '', focus: p.focus || 'center' }))),
       care_log: state.trees.flatMap(t => t.log.map(l => ({ id: l.id, tree_id: t.id, type: l.type, done_on: l.date, note: l.note || '' }))),
       tasks: state.tasks.map(t => ({ id: t.id, title: t.title, due: t.due || '', scope_type: t.scope.type, scope_value: t.scope.value || '', note: t.note || '',
-        done: !!t.done, done_at: t.doneAt || null, log_id: t.logId || null })),
+        done: !!t.done, done_at: t.doneAt || null, log_id: t.logId || null,
+        ...(this.extra ? { category: t.category || '', repeat: t.repeat || '', next_id: t.nextId || null } : {}) })),
     };
   },
   index(rows) { const o = {}; for (const k of TABLES) o[k] = new Map(rows[k].map(r => [r.id, JSON.stringify(r)])); return o; },
@@ -35,6 +37,7 @@ const cloud = {
     const res = await Promise.all(TABLES.map(n => c.from(n).select('*').order('created_at')));
     for (const r of res) if (r.error) throw r.error;
     const [tr, ph, lg, tk] = res.map(r => r.data);
+    this.extra = !(await c.from('tasks').select('category,repeat,next_id').limit(1)).error;
     const urls = new Map();
     if (ph.length) {
       const { data, error } = await c.storage.from('photos').createSignedUrls(ph.map(p => p.path), 86400);
@@ -47,7 +50,7 @@ const cloud = {
         photos: ph.filter(p => p.tree_id === t.id).map(p => ({ id: p.id, path: p.path, data: urls.get(p.path) || '', date: p.taken_on, caption: p.caption, focus: p.focus })),
         log: lg.filter(l => l.tree_id === t.id).map(l => ({ id: l.id, type: l.type, date: l.done_on, note: l.note })) })),
       tasks: tk.map(t => ({ id: t.id, title: t.title, due: t.due, scope: t.scope_type === 'general' ? { type: 'general' } : { type: t.scope_type, value: t.scope_value },
-        note: t.note, done: t.done, doneAt: t.done_at, logId: t.log_id })),
+        note: t.note, done: t.done, doneAt: t.done_at, logId: t.log_id, category: t.category || '', repeat: t.repeat || '', nextId: t.next_id || null })),
     };
     this.snap = this.index(this.rows(state));
     this.set('saved');

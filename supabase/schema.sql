@@ -48,6 +48,9 @@ create table public.tasks (
   done boolean not null default false,
   done_at date,
   log_id text,
+  category text not null default '',
+  repeat text not null default '',
+  next_id text,
   created_at timestamptz not null default now()
 );
 
