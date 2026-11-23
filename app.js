@@ -29,7 +29,7 @@ const SEASON = [
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = () => Math.random().toString(36).slice(2, 9);
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -61,6 +61,7 @@ const store = {
     } catch (e) { this.db = null; this.ok = false; return null; }
   },
   save() {
+    if (cloud.user) return cloud.save(state);
     if (!this.db) return;
     try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(state, 'state'); } catch (e) { this.ok = false; }
   },
@@ -186,7 +187,7 @@ const EMPTY_POT = `<svg class="ink" viewBox="0 0 400 460" preserveAspectRatio="x
   <g fill="var(--moss)" opacity=".6"><ellipse cx="188" cy="366" rx="14" ry="6" transform="rotate(-24 188 366)"/><ellipse cx="213" cy="362" rx="14" ry="6" transform="rotate(22 213 362)"/></g></svg>`;
 const coverPhoto = t => t.photos.find(p => p.id === t.coverId) || [...t.photos].sort((a, b) => b.date.localeCompare(a.date))[0] || null;
 function pic(t, p = coverPhoto(t), lazy = true) {
-  return p ? `<img src="${p.data}" alt="${esc(p.caption || t.name)}" style="object-position:${POS[p.focus] || POS.center}" ${lazy ? 'loading="lazy"' : ''}>` : illustration(t) + '<span class="nophoto">bez fotografie</span>';
+  return p && p.data ? `<img src="${p.data}" alt="${esc(p.caption || t.name)}" style="object-position:${POS[p.focus] || POS.center}" ${lazy ? 'loading="lazy"' : ''}>` : illustration(t) + '<span class="nophoto">bez fotografie</span>';
 }
 const catNo = t => 'N° ' + pad(state.trees.indexOf(t) + 1);
 
@@ -207,18 +208,21 @@ function route() {
 }
 let filter = { q: '', species: '' };
 function render() {
+  if (cloud.client && !cloud.user) return;
   const r = route(), cur = v => (r.view === v || (v === 'sbirka' && r.view === 'tree')) ? 'aria-current="page"' : '';
   const body = r.view === 'tree' ? viewTree(r.id) : r.view === 'sbirka' ? viewCollection() : r.view === 'yamadori' ? viewYamadori() : viewDashboard();
   const link = (v, label, extra = '') => `<a href="#${v}" ${cur(v)}>${label}${extra}</a>`;
   $('#app').innerHTML = `<header class="top"><div class="top-in gut">
       <a class="brand" href="#prehled" aria-label="Bonsai deník, přehled">${SEAL}${r.view === 'prehled' ? '' : '<span>Bonsai deník</span>'}</a>
       <nav class="links" aria-label="Hlavní navigace">${link('prehled', 'Přehled')}${link('sbirka', 'Moje sbírka')}${link('yamadori', 'Yamadori', '<span class="soon-tag">ve vývoji</span>')}</nav>
-      <button class="util" data-act="settings">Záloha a data</button></div></header>
+      <span class="util-wrap">${cloud.user ? '<button class="sync" id="sync" data-act="retry-sync"></button>' : ''}<button class="util" data-act="settings">${cloud.user ? 'Účet a záloha' : 'Záloha a data'}</button></span></div></header>
     <main class="gut"><div class="wrap ${r.view === 'prehled' ? 'dash' : ''}">${body}</div></main>
     <nav class="tabs" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('sbirka', ICON.tree + '<span>Sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>')}</nav>`;
+  paintSync();
 }
-const strips = () => (store.ok ? '' : '<div class="note-strip warn strip-wrap" role="alert"><span>Tento prohlížeč nepovolil ukládání. Změny vydrží jen do zavření stránky, proto si stáhněte zálohu.</span><button class="btn small quiet" data-act="settings">Záloha a data</button></div>') +
-  (state.demo ? '<div class="note-strip strip-wrap"><span>Deník je předvyplněný ukázkovými stromy a úkoly, abyste viděli, jak vypadá zaplněný.</span><button class="btn small quiet" data-act="clear-demo">Smazat ukázku a začít</button></div>' : '');
+const strips = () => (pendingLocal ? `<div class="note-strip strip-wrap"><span>V tomto prohlížeči je uložený deník z dřívějška (${pendingLocal.trees.length} ${plural(pendingLocal.trees.length, 'strom', 'stromy', 'stromů')}, ${pendingLocal.tasks.length} ${plural(pendingLocal.tasks.length, 'úkol', 'úkoly', 'úkolů')}). Chcete ho přenést do účtu?</span><span class="btns"><button class="btn small primary" data-act="adopt-local">Přenést do účtu</button><button class="btn small quiet" data-act="skip-local">Nepřenášet</button></span></div>` : '') +
+  (store.ok || cloud.user ? '' : '<div class="note-strip warn strip-wrap" role="alert"><span>Tento prohlížeč nepovolil ukládání. Změny vydrží jen do zavření stránky, proto si stáhněte zálohu.</span><button class="btn small quiet" data-act="settings">Záloha a data</button></div>') +
+  (state.demo && !cloud.user ? '<div class="note-strip strip-wrap"><span>Deník je předvyplněný ukázkovými stromy a úkoly, abyste viděli, jak vypadá zaplněný.</span><button class="btn small quiet" data-act="clear-demo">Smazat ukázku a začít</button></div>' : '');
 
 function viewDashboard() {
   const n = new Date(), open = state.tasks.filter(t => !t.done), late = open.filter(t => dueInfo(t).cls === 'is-late').length;
@@ -443,12 +447,98 @@ function photoDialog(t, p) {
 }
 
 function settingsDialog() {
-  openDialog(`<div class="dlg">${head('Záloha a data')}
-    <p class="help">Deník je uložený jen v tomto prohlížeči. Zálohu si stahujte pravidelně, hlavně před výměnou telefonu nebo počítače.</p>
+  const acct = cloud.user;
+  openDialog(`<div class="dlg">${head(acct ? 'Účet a záloha' : 'Záloha a data')}
+    ${acct ? `<div class="stack"><p class="eyebrow">Přihlášený účet</p><p style="overflow-wrap:anywhere">${esc(acct.email)}</p>
+      <div class="btns"><button class="btn" data-act="sign-out">Odhlásit se</button><button class="btn quiet" data-act="change-pass">Změnit heslo</button></div></div>
+      <p class="help" style="border-top:1px solid var(--rule);padding-top:18px">Deník se ukládá na server k vašemu účtu a vidíte ho jen vy. Zálohu do souboru si můžete stáhnout kdykoli.</p>`
+    : '<p class="help">Deník je uložený jen v tomto prohlížeči. Zálohu si stahujte pravidelně, hlavně před výměnou telefonu nebo počítače.</p>'}
     <div class="btns"><button class="btn" data-act="export">Stáhnout zálohu</button><button class="btn" data-act="pick-import">Obnovit ze zálohy</button>
       <input type="file" id="import-input" accept="application/json,.json" hidden data-change="import"></div>
-    <div class="btns" style="border-top:1px solid var(--rule);padding-top:18px"><button class="btn quiet" data-act="load-demo">Načíst ukázková data</button><button class="btn danger" data-act="wipe">Smazat všechna data</button></div></div>`);
+    <div class="btns" style="border-top:1px solid var(--rule);padding-top:18px">${acct ? '' : '<button class="btn quiet" data-act="load-demo">Načíst ukázková data</button>'}<button class="btn danger" data-act="wipe">Smazat všechna data</button></div></div>`);
 }
+
+/* ---------- Účet ---------- */
+let pendingLocal = null, gate = { mode: 'in', note: '' };
+const SYNC_TEXT = { saving: 'Ukládám…', saved: 'Uloženo', error: 'Neuloženo, zkusit znovu' };
+function paintSync() { const el = $('#sync'); if (el) { el.textContent = SYNC_TEXT[cloud.status]; el.className = 'sync ' + cloud.status; el.disabled = cloud.status !== 'error'; } }
+function authMsg(e) {
+  const m = (e && (e.code || '') + ' ' + (e.message || '')).toLowerCase();
+  if (m.includes('invalid login') || m.includes('invalid_credentials')) return 'E-mail nebo heslo nesedí. Zkuste to znovu, nebo si heslo obnovte.';
+  if (m.includes('not confirmed')) return 'E-mail ještě není potvrzený. Klikněte na odkaz ve zprávě, kterou jsme vám poslali.';
+  if (m.includes('already registered') || m.includes('user_already_exists')) return 'Účet s tímto e-mailem už existuje. Přihlaste se, nebo si obnovte heslo.';
+  if (m.includes('rate limit') || m.includes('security purposes')) return 'Příliš mnoho pokusů za sebou. Počkejte chvíli a zkuste to znovu.';
+  if (m.includes('weak') || m.includes('at least')) return 'Heslo je příliš slabé. Použijte aspoň 8 znaků.';
+  if (m.includes('different from the old') || m.includes('same_password')) return 'Nové heslo musí být jiné než dosavadní.';
+  if (m.includes('fetch') || m.includes('network')) return 'Server je nedostupný. Zkontrolujte připojení k internetu a zkuste to znovu.';
+  return 'Nepodařilo se to. Zkuste to prosím za chvíli znovu.';
+}
+function renderGate() {
+  const g = gate, title = { in: 'Přihlášení', up: 'Nový účet', reset: 'Obnova hesla' }[g.mode];
+  $('#app').innerHTML = `<main class="gate gut"><div class="gate-in">
+    <div class="gate-lead">${SEAL}<h1 class="display">Bonsai deník</h1>
+      <p class="summary">Osobní deník pěstitele: sbírka stromů, úkoly podle termínu, fotografie vývoje a poznámky. Svůj deník vidíte jen vy.</p></div>
+    <form class="gate-form" id="gate-form" novalidate><h2>${title}</h2>
+      ${g.note ? `<p class="gate-note" role="status">${g.note}</p>` : ''}
+      ${F('au-email', 'E-mail', `<input type="text" inputmode="email" id="au-email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(g.email || '')}">`)}
+      ${g.mode === 'reset' ? '' : F('au-pass', g.mode === 'up' ? 'Heslo (aspoň 8 znaků)' : 'Heslo', `<input type="password" id="au-pass" autocomplete="${g.mode === 'up' ? 'new-password' : 'current-password'}">`)}
+      <p class="err" id="e-gate" role="alert" hidden></p>
+      <button class="btn primary" id="au-submit">${{ in: 'Přihlásit se', up: 'Založit účet', reset: 'Poslat odkaz pro obnovu' }[g.mode]}</button>
+      <div class="gate-links">${g.mode === 'in' ? '<button type="button" data-act="gate-mode" data-mode="up">Založit nový účet</button><button type="button" data-act="gate-mode" data-mode="reset">Zapomenuté heslo</button>'
+        : '<button type="button" data-act="gate-mode" data-mode="in">Zpět na přihlášení</button>'}</div></form></div></main>`;
+}
+async function gateSubmit() {
+  const email = $('#au-email').value.trim(), pass = $('#au-pass') ? $('#au-pass').value : '', here = location.origin + location.pathname, auth = cloud.client.auth;
+  $('#e-gate').hidden = true;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('au-email', 'Zadejte e-mail ve tvaru jmeno@domena.cz.');
+  if (gate.mode === 'in' && !pass) return fail('au-pass', 'Zadejte heslo.');
+  if (gate.mode === 'up' && pass.length < 8) return fail('au-pass', 'Heslo musí mít aspoň 8 znaků.');
+  const btn = $('#au-submit'); btn.disabled = true; gate.email = email;
+  let res;
+  try {
+    res = gate.mode === 'in' ? await auth.signInWithPassword({ email, password: pass })
+      : gate.mode === 'up' ? await auth.signUp({ email, password: pass, options: { emailRedirectTo: here } })
+      : await auth.resetPasswordForEmail(email, { redirectTo: here });
+  } catch (e) { res = { error: e }; }
+  if (res.error) { btn.disabled = false; const el = $('#e-gate'); el.textContent = authMsg(res.error); el.hidden = false; return; }
+  if (gate.mode === 'up' && !res.data.session) { gate = { mode: 'in', email, note: 'Účet je založený. Poslali jsme vám e-mail s potvrzovacím odkazem, po kliknutí se můžete přihlásit.' }; renderGate(); }
+  if (gate.mode === 'reset') { gate = { mode: 'in', email, note: 'Pokud účet s tímto e-mailem existuje, přišel na něj odkaz pro nastavení nového hesla.' }; renderGate(); }
+}
+function passwordDialog(title) {
+  openDialog(`<form class="dlg" novalidate>${head(title)}${F('np-pass', 'Nové heslo (aspoň 8 znaků)', '<input type="password" id="np-pass" autocomplete="new-password">')}
+    <div class="dlg-foot"><button type="button" class="btn quiet" data-act="close">Zrušit</button><button class="btn primary">Uložit heslo</button></div></form>`, {
+    async onSubmit() {
+      const p = $('#np-pass').value;
+      if (p.length < 8) return fail('np-pass', 'Heslo musí mít aspoň 8 znaků.');
+      const { error } = await cloud.client.auth.updateUser({ password: p });
+      if (error) return fail('np-pass', authMsg(error));
+      closeDialog(); toast('Heslo změněno');
+    },
+  });
+}
+/* Místní data dostanou při přenosu do účtu nová jedinečná id. */
+function reid(s) {
+  const map = new Map(), n = id => { if (!map.has(id)) map.set(id, uid()); return map.get(id); };
+  const trees = s.trees.map(t => ({ ...t, id: n(t.id), coverId: t.coverId ? n(t.coverId) : null,
+    photos: (t.photos || []).filter(p => String(p.data).startsWith('data:')).map(p => ({ ...p, id: n(p.id), path: undefined })),
+    log: (t.log || []).map(l => ({ ...l, id: n(l.id) })) }));
+  const tasks = s.tasks.map(t => ({ ...t, id: n(t.id), logId: t.logId ? n(t.logId) : null, scope: t.scope.type === 'tree' ? { type: 'tree', value: n(t.scope.value) } : t.scope }));
+  return { trees, tasks, demo: false };
+}
+async function enter() {
+  $('#app').innerHTML = '<main class="gate gut"><p class="eyebrow" role="status">Otevírám deník…</p></main>';
+  try {
+    state = await cloud.load();
+    const local = await store.load();
+    pendingLocal = local && !local.demo && Array.isArray(local.trees) && Array.isArray(local.tasks) && (local.trees.length || local.tasks.length) && !state.trees.length && !state.tasks.length
+      && !localSkipped() ? local : null;
+    render();
+  } catch (e) {
+    $('#app').innerHTML = `<main class="gate gut"><div class="blank" role="alert"><strong>Deník se nepodařilo načíst.</strong><span>${authMsg(e)}</span>
+      <span class="btns"><button class="btn primary" data-act="reload">Zkusit znovu</button><button class="btn quiet" data-act="sign-out">Odhlásit se</button></span></div></main>`;
+  }
+}
+const localSkipped = () => { try { return localStorage.getItem('bonsai-skip-local') === cloud.user.id; } catch (e) { return false; } };
 
 async function fileToDataURL(file) {
   const url = URL.createObjectURL(file);
@@ -464,6 +554,13 @@ async function fileToDataURL(file) {
 /* ---------- Akce ---------- */
 const actions = {
   close: closeDialog,
+  'gate-mode': el => { gate = { mode: el.dataset.mode, email: $('#au-email') ? $('#au-email').value.trim() : '', note: '' }; renderGate(); },
+  'sign-out': async () => { closeDialog(); await cloud.client.auth.signOut(); },
+  'change-pass': () => passwordDialog('Změna hesla'),
+  reload: () => enter(),
+  'retry-sync': () => cloud.save(state),
+  'adopt-local': () => { state = reid(pendingLocal); pendingLocal = null; commit('Deník se přenáší do účtu'); },
+  'skip-local': () => { try { localStorage.setItem('bonsai-skip-local', cloud.user.id); } catch (e) { /* jen pohodlí */ } pendingLocal = null; render(); },
   'pick-photos': () => $('#photo-input').click(),
   'pick-import': () => $('#import-input').click(),
   'reset-filter': () => { filter = { q: '', species: '' }; render(); },
@@ -484,9 +581,16 @@ const actions = {
   'clear-demo': () => confirmBox('Smazat ukázku?', 'Ukázkové stromy a úkoly zmizí a deník bude prázdný, připravený na vaši sbírku.', 'Smazat ukázku', () => { state = { trees: [], tasks: [], demo: false }; commit('Ukázka smazána'); }),
   wipe: () => confirmBox('Smazat všechna data?', 'Zmizí všechny stromy, fotografie i úkoly. Tento krok nejde vrátit, proto si nejdřív stáhněte zálohu.', 'Smazat vše', () => { state = { trees: [], tasks: [], demo: false }; commit('Data smazána'); }),
   'load-demo': () => confirmBox('Načíst ukázku?', 'Současný obsah deníku se nahradí ukázkovými stromy a úkoly.', 'Načíst ukázku', () => { state = demoState(); commit('Ukázková data načtena'); }),
-  export: () => {
+  export: async () => {
+    const copy = JSON.parse(JSON.stringify(state));
+    try {
+      for (const t of copy.trees) for (const p of t.photos) if (p.data && !p.data.startsWith('data:')) {
+        const blob = await (await fetch(p.data)).blob();
+        p.data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+      }
+    } catch (e) { return toast('Fotografie se nepodařilo stáhnout do zálohy. Zkontrolujte připojení a zkuste to znovu.', true); }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(state)], { type: 'application/json' }));
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(copy)], { type: 'application/json' }));
     a.download = `bonsai-zaloha-${iso(today())}.json`; document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Záloha připravena ke stažení');
   },
@@ -511,7 +615,7 @@ const changes = {
     try {
       const data = JSON.parse(await el.files[0].text());
       if (!Array.isArray(data.trees) || !Array.isArray(data.tasks)) throw new Error('format');
-      state = { trees: data.trees, tasks: data.tasks, demo: !!data.demo }; closeDialog(); commit('Záloha obnovena');
+      state = cloud.user ? reid(data) : { trees: data.trees, tasks: data.tasks, demo: !!data.demo }; closeDialog(); commit('Záloha obnovena');
     } catch (e) { toast('Tento soubor není záloha Bonsai deníku. Vyberte soubor bonsai-zaloha….json.', true); }
   },
 };
@@ -526,12 +630,23 @@ document.addEventListener('input', e => {
   clearErr(e.target);
   if (e.target.dataset.input === 'filter-q') { filter.q = e.target.value; $('#cards').innerHTML = catalogHtml(); }
 });
-document.addEventListener('submit', e => { e.preventDefault(); const d = dlg(); if (d.contains(e.target) && d._submit) d._submit(); });
+document.addEventListener('submit', e => { e.preventDefault(); if (e.target.id === 'gate-form') return gateSubmit(); const d = dlg(); if (d.contains(e.target) && d._submit) d._submit(); });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 
 (async function start() {
-  const saved = await store.load();
-  if (saved && Array.isArray(saved.trees) && Array.isArray(saved.tasks)) state = saved;
-  else { state = demoState(); store.save(); }
-  render();
+  if (!cloud.client) {
+    const saved = await store.load();
+    if (saved && Array.isArray(saved.trees) && Array.isArray(saved.tasks)) state = saved;
+    else { state = demoState(); store.save(); }
+    return render();
+  }
+  cloud.onStatus = (status) => { paintSync(); if (status === 'error') toast('Změny se nepodařilo uložit na server. Zkontrolujte připojení.', true); };
+  window.addEventListener('beforeunload', e => { if (cloud.user && cloud.status !== 'saved') e.preventDefault(); });
+  cloud.client.auth.onAuthStateChange((event, session) => setTimeout(async () => {
+    if (!session) { cloud.user = null; state = { trees: [], tasks: [], demo: false }; closeDialog(); return renderGate(); }
+    const fresh = !cloud.user || cloud.user.id !== session.user.id;
+    cloud.user = session.user;
+    if (fresh) await enter();
+    if (event === 'PASSWORD_RECOVERY') passwordDialog('Nastavte si nové heslo');
+  }, 0));
 })();

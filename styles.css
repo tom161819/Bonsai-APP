@@ -258,7 +258,7 @@ dialog::backdrop { background: var(--veil); }
 .field > label, .field > legend, .field > .lbl { font-size: .72rem; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); padding: 0; }
 .field > legend { margin-bottom: 6px; }
 .row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-input[type="text"], input[type="search"], input[type="date"], input[type="number"], select, textarea {
+input[type="text"], input[type="password"], input[type="search"], input[type="date"], input[type="number"], select, textarea {
   width: 100%; min-width: 0; min-height: 44px; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 3px; background: var(--card); font-size: 16px; }
 input:hover, select:hover, textarea:hover { border-color: var(--ink-2); }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offset: 0; border-color: var(--ink); }
@@ -300,3 +300,25 @@ input[type="file"]::file-selector-button { min-height: 40px; margin-right: 12px;
   .links a { padding: 7px 0; }
   .top .util { margin-left: 0; }
 }
+
+/* Účet: přihlašovací stránka a stav ukládání */
+.gate { grid-column: 1 / -1; min-height: 100dvh; display: grid; place-items: center; padding-block: 32px; }
+.gate-in { width: 100%; max-width: 920px; display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 56px; align-items: center; }
+.gate-lead { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; }
+.gate-lead .seal { width: 34px; height: 34px; }
+.gate-form { display: flex; flex-direction: column; gap: 16px; padding-top: 18px; border-top: 1px solid var(--ink); }
+.gate-form .btn { min-height: 46px; }
+.gate-form .btn[disabled] { opacity: .6; cursor: progress; }
+.gate-note { padding: 10px 12px; border: 1px solid var(--moss); background: var(--moss-wash); font-size: .9rem; }
+.gate-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+.gate-links button { border: 0; background: none; padding: 8px 0; cursor: pointer; font-size: .88rem; text-decoration: underline; text-underline-offset: 3px; color: var(--ink-2); }
+.gate-links button:hover { color: var(--ink); }
+@media (max-width: 760px) { .gate { place-items: start center; } .gate-in { grid-template-columns: minmax(0, 1fr); gap: 28px; } .gate-lead .display { font-size: 3rem; } }
+.util-wrap { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.top .util-wrap .util { margin-left: 0; }
+.sync { border: 0; background: none; padding: 4px 0; font-size: .75rem; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.sync::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--moss); }
+.sync.saving::before { background: none; border: 1.5px solid var(--ink-2); }
+.sync.error { color: var(--clay); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.sync.error::before { background: var(--clay); border-radius: 0; transform: rotate(45deg); }
+@media (min-width: 761px) { .util-wrap { margin-left: 0; flex-direction: column; align-items: flex-start; gap: 4px; } }
