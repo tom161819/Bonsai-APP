@@ -236,7 +236,9 @@ const ICON = {
   list: ico('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5.500l1 1 1.500-2M4 11.500l1 1 1.500-2M4 17.500l1 1 1.500-2"/>'),
   map: ico('<path d="M12 21s6-5.500 6-10.500a6 6 0 0 0-12 0C6 15.500 12 21 12 21z"/><circle cx="12" cy="10.500" r="2"/>'),
 };
-const SEAL = `<svg class="seal" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="3" fill="var(--clay)"/><g fill="none" stroke="var(--paper)" stroke-width="1.600" stroke-linecap="round"><path d="M13 19v-6c0-2 2-2.500 3.500-4"/><path d="M8 19h10"/><path d="M7 10.500h7M12.500 7h7"/></g></svg>`;
+/* Znak Bonsai deníku: kruh s bonsají v misce. Barvy řídí --mark-bg a --mark-fg, na tmavém pásu se obrací. */
+const SEAL = `<svg class="seal" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="var(--mark-bg)"/><g fill="var(--mark-fg)"><path d="M34 76C42 68 50 63 51 57 52 51 49 48 49.500 44 49.500 38 51 33 54 26H57.500C55.500 32 58.500 38 58.500 44 58.500 49 65.500 52 65.500 57.500 65.500 64 58 69 60 76Z"/><ellipse cx="38" cy="24" rx="9" ry="4.500"/><ellipse cx="47" cy="18.500" rx="10" ry="6"/><ellipse cx="58" cy="17.500" rx="9" ry="5"/><ellipse cx="68" cy="21.500" rx="9" ry="4.500"/><ellipse cx="53" cy="24.500" rx="24" ry="4"/><ellipse cx="14" cy="44" rx="7" ry="4.500"/><ellipse cx="23" cy="38.500" rx="10" ry="6"/><ellipse cx="35" cy="36" rx="10" ry="6"/><ellipse cx="46" cy="39" rx="9" ry="5"/><ellipse cx="33" cy="44.500" rx="25" ry="4.500"/><ellipse cx="71" cy="56" rx="6" ry="3.500"/><ellipse cx="79" cy="51.500" rx="8" ry="5"/><ellipse cx="87.500" cy="55" rx="6.500" ry="4"/><ellipse cx="80" cy="57" rx="13.500" ry="3.500"/><path d="M20 75H90Q91 75 90.300 76.200L84 84Q83.300 85 82 85H28Q26.700 85 26 84L19.700 76.200Q19 75 20 75ZM29 85H35V88H29ZM72 85H78V88H72Z"/></g><rect x="22" y="77.400" width="66" height=".8" fill="var(--mark-bg)"/></svg>`;
+const WORDMARK = 'Bonsai <em>deník</em>';
 
 /* ---------- Vykreslení ---------- */
 function route() {
@@ -251,7 +253,7 @@ function render() {
   const body = r.view === 'tree' ? viewTree(r.id) : r.view === 'sbirka' ? viewCollection() : r.view === 'yamadori' ? viewYamadori() : r.view === 'ukoly' ? viewTasks() : viewDashboard();
   const link = (v, label, extra = '') => `<a href="#${v}" ${cur(v)}>${label}${extra}</a>`;
   $('#app').innerHTML = `<header class="top"><div class="top-in gut">
-      <a class="brand" href="#prehled" aria-label="Bonsai deník, přehled">${SEAL}${r.view === 'prehled' ? '' : '<span>Bonsai deník</span>'}</a>
+      <a class="brand" href="#prehled" aria-label="Bonsai deník, přehled">${SEAL}${r.view === 'prehled' ? '' : `<span>${WORDMARK}</span>`}</a>
       <nav class="links" aria-label="Hlavní navigace">${link('prehled', ICON.home + '<span>Přehled</span>')}${link('ukoly', ICON.list + '<span>Úkoly</span>')}${link('sbirka', ICON.tree + '<span>Moje sbírka</span>')}${link('yamadori', ICON.map + '<span>Yamadori</span>', '<span class="soon-tag">ve vývoji</span>')}</nav>
       <span class="util-wrap">${cloud.user ? '<button class="sync" id="sync" data-act="retry-sync"></button>' : ''}<button class="util" data-act="settings">${cloud.user ? 'Účet a záloha' : 'Záloha a data'}</button></span></div></header>
     <main class="gut"><div class="wrap ${r.view === 'prehled' ? 'dash' : ''}">${body}</div></main>
@@ -311,8 +313,8 @@ function seasonShift(dir) {
 function viewDashboard() {
   const n = new Date(), open = state.tasks.filter(t => !t.done), late = open.filter(t => dueInfo(t).cls === 'is-late').length;
   return `<div class="dash-main">
-      <header class="lead-text"><div><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1 class="display">Bonsai deník</h1>
-        <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce, <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? `, z toho <strong>${late} po termínu</strong>` : ''}.</p></div>
+      <header class="lead-text band"><div class="band-id">${SEAL}<div><p class="eyebrow">${DAYS[n.getDay()]} ${n.getDate()}. ${MONTHS_GEN[n.getMonth()]} ${n.getFullYear()}</p><h1 class="display">${WORDMARK}</h1>
+        <p class="summary"><strong>${state.trees.length}</strong> ${plural(state.trees.length, 'strom', 'stromy', 'stromů')} ve sbírce, <strong>${open.length}</strong> ${plural(open.length, 'otevřený úkol', 'otevřené úkoly', 'otevřených úkolů')}${late ? `, z toho <strong class="late">${late} po termínu</strong>` : ''}.</p></div></div>
         <button class="btn primary" data-act="new-task"><span class="plus">+</span> Přidat úkol</button></header>
       <section class="diary frame"><div class="sec-head"><h2>Nejbližší úkoly</h2><span class="side"><a href="#ukoly">Všechny úkoly →</a></span></div>
         ${taskList(state.tasks, 'Diář je prázdný.', 'Zapište první úkol tlačítkem Přidat úkol, třeba přesazení na jaře.', 8)}</section>
@@ -643,7 +645,7 @@ function authMsg(e) {
 function renderGate() {
   const g = gate, title = { in: 'Přihlášení', up: 'Nový účet', reset: 'Obnova hesla' }[g.mode];
   $('#app').innerHTML = `<main class="gate gut"><div class="gate-in">
-    <div class="gate-lead">${SEAL}<h1 class="display">Bonsai deník</h1>
+    <div class="gate-lead">${SEAL}<h1 class="display">${WORDMARK}</h1>
       <p class="summary">Osobní deník pěstitele: sbírka stromů, úkoly podle termínu, fotografie vývoje a poznámky. Svůj deník vidíte jen vy.</p></div>
     <form class="gate-form" id="gate-form" novalidate><h2>${title}</h2>
       ${g.note ? `<p class="gate-note" role="status">${g.note}</p>` : ''}
